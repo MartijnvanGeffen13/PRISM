@@ -1,0 +1,19 @@
+// UsersStaging — shared base query (set Enable Load = OFF)
+// The Entra snapshot is a SINGLE JSON document ({ generatedUtc, count, value:[...] }),
+// NOT NDJSON. Parse it once, take the "value" array, one row per user, keep the
+// raw user record + the snapshot timestamp.
+let
+    Source   = AzureStorage.DataLake("https://" & DataLakeAccountName & ".dfs.core.windows.net/reference/entra/users.json"),
+    Files    = Table.SelectRows(Source, each [Attributes]?[Hidden]? <> true),
+    Parsed   = Table.AddColumn(Files, "Doc", each Json.Document([Content], 65001)),   // 65001 = UTF-8
+    AddUsers = Table.AddColumn(Parsed, "Users", each
+        let d = [Doc]
+        in  List.Transform(
+                Record.FieldOrDefault(d, "value", {}),
+                (u) => [GeneratedUtc = Record.FieldOrDefault(d, "generatedUtc"), User = u])),
+    Sel      = Table.SelectColumns(AddUsers, {"Users"}),
+    ToRows   = Table.ExpandListColumn(Sel, "Users"),
+    Expanded = Table.ExpandRecordColumn(ToRows, "Users", {"GeneratedUtc", "User"}, {"GeneratedUtc", "User"}),
+    WithId   = Table.AddColumn(Expanded, "UserId", each Record.FieldOrDefault([User], "id"), type text)
+in
+    WithId

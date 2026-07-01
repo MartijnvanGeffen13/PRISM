@@ -1,0 +1,36 @@
+// DlpRule — child: one row per rule match. LOAD = ON.
+// Keys: PolicyKey = EventId|PolicyId, RuleKey = EventId|Rule.RuleId.
+// Relationships:
+//   DlpPolicy[PolicyKey] 1 --- * DlpRule[PolicyKey]
+//   DlpRule[RuleKey]     1 --- * DlpSensitiveInfo[RuleKey]
+let
+    Source   = DlpStaging,
+    Add      = Table.AddColumn(Source, "PolicyDetails", each Record.FieldOrDefault([Record], "PolicyDetails")),
+    Sel      = Table.SelectColumns(Add, {"EventId", "PolicyDetails"}),
+    NoNull   = Table.SelectRows(Sel, each [PolicyDetails] <> null and not List.IsEmpty([PolicyDetails])),
+    PolRows  = Table.ExpandListColumn(NoNull, "PolicyDetails"),
+    AddPol   = Table.AddColumn(PolRows, "PolicyId", each Record.FieldOrDefault([PolicyDetails], "PolicyId"), type text),
+    AddRules = Table.AddColumn(AddPol,  "Rules",    each Record.FieldOrDefault([PolicyDetails], "Rules")),
+    Sel2     = Table.SelectColumns(AddRules, {"EventId", "PolicyId", "Rules"}),
+    NoNull2  = Table.SelectRows(Sel2, each [Rules] <> null and not List.IsEmpty([Rules])),
+    RuleRows = Table.ExpandListColumn(NoNull2, "Rules"),
+    fields   = List.Distinct(List.Combine(List.Transform(List.Select(RuleRows[Rules], each _ <> null), each Record.FieldNames(_)))),
+    Expanded = Table.ExpandRecordColumn(RuleRows, "Rules", fields, List.Transform(fields, each "Rule." & _)),
+    Flattened= fnExpandAllRecords(Expanded),
+    listCols = List.Select(Table.ColumnNames(Flattened), each
+        let vals = List.Select(Table.Column(Flattened, _), each _ <> null)
+        in  List.Count(vals) > 0 and Value.Is(List.First(vals), type list)),
+    Cleaned  = List.Accumulate(listCols, Flattened, (state, col) =>
+        let
+            vals      = List.Select(Table.Column(state, col), each _ <> null and not List.IsEmpty(_)),
+            firstElem = if List.IsEmpty(vals) then null else List.First(List.First(vals)),
+            isComplex = firstElem <> null and (Value.Is(firstElem, type record) or Value.Is(firstElem, type list))
+        in
+            if isComplex then Table.RemoveColumns(state, {col})
+            else Table.TransformColumns(state, {{col, each if _ = null then null
+                     else Text.Combine(List.Transform(_, Text.From), ", "), type text}})),
+    AddPolKey = Table.AddColumn(Cleaned, "PolicyKey", each [EventId] & "|" & [PolicyId], type text),
+    AddRulKey = Table.AddColumn(AddPolKey, "RuleKey",
+                    each [EventId] & "|" & Text.From(Record.FieldOrDefault(_, "Rule.RuleId")), type text)
+in
+    AddRulKey

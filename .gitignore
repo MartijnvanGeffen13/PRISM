@@ -1,0 +1,19 @@
+# Azure secrets / local settings — never commit
+local.settings.json
+*.secrets.*
+.azure/*/.env
+.azure/**/config.json
+
+# Azure Functions
+bin/
+obj/
+__pycache__/
+*.pyc
+.python_packages/
+.venv/
+venv/
+
+# Build / tooling
+.vscode/
+*.log
+

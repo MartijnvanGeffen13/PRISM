@@ -1,0 +1,38 @@
+// DlpExchangeRecipients — child table
+// One row per Exchange recipient (To / CC / BCC) per DLP event.
+// References the shared DlpStaging query. Relationship:
+//   DlpEvent[EventId] 1 --- * DlpExchangeRecipients[EventId]
+let
+    Source = DlpStaging,
+
+    // ExchangeMetaData is a top-level record on DLP records that involve email.
+    AddExch = Table.AddColumn(Source, "Exch", each Record.FieldOrDefault([Record], "ExchangeMetaData")),
+    Sel     = Table.SelectColumns(AddExch, {"EventId", "Exch"}),
+    HasExch = Table.SelectRows(Sel, each [Exch] <> null),
+
+    // Pull the three recipient lists (each may be null).
+    AddTo   = Table.AddColumn(HasExch, "To",  each Record.FieldOrDefault([Exch], "To")),
+    AddCC   = Table.AddColumn(AddTo,   "CC",  each Record.FieldOrDefault([Exch], "CC")),
+    AddBCC  = Table.AddColumn(AddCC,   "BCC", each Record.FieldOrDefault([Exch], "BCC")),
+    Sel2    = Table.SelectColumns(AddBCC, {"EventId", "To", "CC", "BCC"}),
+
+    // Build a single list of {RecipientType, Recipient} records per event.
+    AddRecips = Table.AddColumn(Sel2, "Recipients", each
+        let
+            mk  = (lst as nullable list, kind as text) as list =>
+                    if lst = null then {}
+                    else List.Transform(lst, each [RecipientType = kind, Recipient = Text.From(_)]),
+            all = List.Combine({ mk([To], "To"), mk([CC], "CC"), mk([BCC], "BCC") })
+        in
+            all),
+    Sel3      = Table.SelectColumns(AddRecips, {"EventId", "Recipients"}),
+    NotEmpty  = Table.SelectRows(Sel3, each not List.IsEmpty([Recipients])),
+
+    // Explode to one row per recipient.
+    ToRows    = Table.ExpandListColumn(NotEmpty, "Recipients"),
+    Expanded  = Table.ExpandRecordColumn(ToRows, "Recipients",
+                    {"RecipientType", "Recipient"}, {"RecipientType", "Recipient"}),
+    Typed     = Table.TransformColumnTypes(Expanded,
+                    {{"EventId", type text}, {"RecipientType", type text}, {"Recipient", type text}})
+in
+    Typed

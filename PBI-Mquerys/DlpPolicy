@@ -1,0 +1,15 @@
+// DlpPolicy — child: one row per policy match. LOAD = ON.
+// Keys: PolicyKey = EventId|PolicyId (used to relate DlpRule).
+// Relationship: DlpEvent[EventId] 1 --- * DlpPolicy[EventId].
+let
+    Source  = DlpStaging,
+    Add     = Table.AddColumn(Source, "PolicyDetails", each Record.FieldOrDefault([Record], "PolicyDetails")),
+    Sel     = Table.SelectColumns(Add, {"EventId", "PolicyDetails"}),
+    NoNull  = Table.SelectRows(Sel, each [PolicyDetails] <> null and not List.IsEmpty([PolicyDetails])),
+    ToRows  = Table.ExpandListColumn(NoNull, "PolicyDetails"),
+    AddId   = Table.AddColumn(ToRows, "PolicyId",   each Record.FieldOrDefault([PolicyDetails], "PolicyId"),   type text),
+    AddName = Table.AddColumn(AddId,  "PolicyName", each Record.FieldOrDefault([PolicyDetails], "PolicyName"), type text),
+    AddKey  = Table.AddColumn(AddName,"PolicyKey",  each [EventId] & "|" & [PolicyId], type text),
+    Result  = Table.Distinct(Table.SelectColumns(AddKey, {"PolicyKey", "EventId", "PolicyId", "PolicyName"}))
+in
+    Result

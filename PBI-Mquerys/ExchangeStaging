@@ -1,0 +1,19 @@
+// ExchangeStaging — shared base query (set Enable Load = OFF)
+// Parses the Exchange NDJSON once, one row per audit record, keeping the raw
+// top-level record so each child query can expand only what it needs.
+let
+    Source = AzureStorage.DataLake("https://" & DataLakeAccountName & ".dfs.core.windows.net/auditlogs/exchange-json"),
+    Files  = Table.SelectRows(Source, each [Attributes]?[Hidden]? <> true),
+    Parsed = Table.AddColumn(Files, "Records", each
+        let
+            lines    = Lines.FromBinary([Content], null, null, 65001),   // 65001 = UTF-8
+            nonEmpty = List.Select(lines, each Text.Trim(_) <> ""),
+            recs     = List.Transform(nonEmpty, each Json.Document(_))
+        in  recs),
+    Kept   = Table.SelectColumns(Parsed, {"Name", "Records"}),
+    ToRows = Table.ExpandListColumn(Kept, "Records"),
+    NoNull = Table.SelectRows(ToRows, each [Records] <> null),
+    WithId = Table.AddColumn(NoNull, "EventId", each Record.FieldOrDefault([Records], "Id"), type text),
+    Result = Table.RenameColumns(WithId, {{"Name", "SourceFile"}, {"Records", "Record"}})
+in
+    Result

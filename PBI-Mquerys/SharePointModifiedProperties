@@ -1,0 +1,13 @@
+// SharePointModifiedProperties — child: one row per ModifiedProperty
+// (Name / NewValue / OldValue) where present. LOAD = ON.
+// Relationship: SharePointEvent[EventId] 1 --- * SharePointModifiedProperties[EventId].
+let
+    Source = SharePointStaging,
+    Add    = Table.AddColumn(Source, "ModifiedProperties", each Record.FieldOrDefault([Record], "ModifiedProperties")),
+    Sel    = Table.SelectColumns(Add, {"EventId", "ModifiedProperties"}),
+    NoNull = Table.SelectRows(Sel, each [ModifiedProperties] <> null and not List.IsEmpty([ModifiedProperties])),
+    ToRows = Table.ExpandListColumn(NoNull, "ModifiedProperties"),
+    fields = List.Distinct(List.Combine(List.Transform(List.Select(ToRows[ModifiedProperties], each _ <> null), each Record.FieldNames(_)))),
+    Result = Table.ExpandRecordColumn(ToRows, "ModifiedProperties", fields)
+in
+    Result

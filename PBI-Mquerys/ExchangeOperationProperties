@@ -1,0 +1,12 @@
+// ExchangeOperationProperties — child: one row per OperationProperty (Name/Value). LOAD = ON.
+// Relationship: ExchangeEvent[EventId] 1 --- * ExchangeOperationProperties[EventId].
+let
+    Source = ExchangeStaging,
+    Add    = Table.AddColumn(Source, "OperationProperties", each Record.FieldOrDefault([Record], "OperationProperties")),
+    Sel    = Table.SelectColumns(Add, {"EventId", "OperationProperties"}),
+    NoNull = Table.SelectRows(Sel, each [OperationProperties] <> null and not List.IsEmpty([OperationProperties])),
+    ToRows = Table.ExpandListColumn(NoNull, "OperationProperties"),
+    fields = List.Distinct(List.Combine(List.Transform(List.Select(ToRows[OperationProperties], each _ <> null), each Record.FieldNames(_)))),
+    Result = Table.ExpandRecordColumn(ToRows, "OperationProperties", fields)
+in
+    Result

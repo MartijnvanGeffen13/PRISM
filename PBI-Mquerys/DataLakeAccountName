@@ -1,0 +1,5 @@
+// DataLakeAccountName — Power Query parameter.
+// Set this to YOUR PRISM data lake storage account name (no https://, no suffix),
+// e.g. "dlprismab12cd". Find it in the Azure portal or from the deployment output
+// DATA_LAKE_ACCOUNT_NAME. All *Staging queries build their URL from this value.
+"REPLACE_WITH_YOUR_DATALAKE_ACCOUNT_NAME" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]

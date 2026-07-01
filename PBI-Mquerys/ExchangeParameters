@@ -1,0 +1,12 @@
+// ExchangeParameters — child: one row per cmdlet Parameter (Name/Value). LOAD = ON.
+// Relationship: ExchangeEvent[EventId] 1 --- * ExchangeParameters[EventId].
+let
+    Source = ExchangeStaging,
+    Add    = Table.AddColumn(Source, "Parameters", each Record.FieldOrDefault([Record], "Parameters")),
+    Sel    = Table.SelectColumns(Add, {"EventId", "Parameters"}),
+    NoNull = Table.SelectRows(Sel, each [Parameters] <> null and not List.IsEmpty([Parameters])),
+    ToRows = Table.ExpandListColumn(NoNull, "Parameters"),
+    fields = List.Distinct(List.Combine(List.Transform(List.Select(ToRows[Parameters], each _ <> null), each Record.FieldNames(_)))),
+    Result = Table.ExpandRecordColumn(ToRows, "Parameters", fields)
+in
+    Result

@@ -1,0 +1,21 @@
+// fnExpandAllRecords — helper function (set Enable Load = OFF)
+// Recursively expands every record-typed column until none remain.
+// Child fields are prefixed with the parent column name (parent.child).
+(tbl as table) as table =>
+let
+    isRecordCol = (c as text) as logical =>
+        let vals = List.Select(Table.Column(tbl, c), each _ <> null)
+        in  List.Count(vals) > 0 and Value.Is(List.First(vals), type record),
+    recordCols = List.Select(Table.ColumnNames(tbl), each isRecordCol(_)),
+    result =
+        if List.IsEmpty(recordCols) then tbl
+        else @fnExpandAllRecords(
+            List.Accumulate(recordCols, tbl, (state, col) =>
+                let
+                    colVals  = List.Select(Table.Column(state, col), each _ <> null),
+                    fields   = List.Distinct(List.Combine(List.Transform(colVals, each Record.FieldNames(_)))),
+                    newNames = List.Transform(fields, each col & "." & _)
+                in
+                    Table.ExpandRecordColumn(state, col, fields, newNames)))
+in
+    result

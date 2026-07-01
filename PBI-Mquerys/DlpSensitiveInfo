@@ -1,0 +1,25 @@
+// DlpSensitiveInfo — child: one row per SIT detection per rule. LOAD = ON.
+// Key: RuleKey = EventId|RuleId.
+// Relationship: DlpRule[RuleKey] 1 --- * DlpSensitiveInfo[RuleKey].
+let
+    Source   = DlpStaging,
+    Add      = Table.AddColumn(Source, "PolicyDetails", each Record.FieldOrDefault([Record], "PolicyDetails")),
+    Sel      = Table.SelectColumns(Add, {"EventId", "PolicyDetails"}),
+    NoNull   = Table.SelectRows(Sel, each [PolicyDetails] <> null and not List.IsEmpty([PolicyDetails])),
+    PolRows  = Table.ExpandListColumn(NoNull, "PolicyDetails"),
+    AddRules = Table.AddColumn(PolRows, "Rules", each Record.FieldOrDefault([PolicyDetails], "Rules")),
+    Sel2     = Table.SelectColumns(AddRules, {"EventId", "Rules"}),
+    NoNull2  = Table.SelectRows(Sel2, each [Rules] <> null and not List.IsEmpty([Rules])),
+    RuleRows = Table.ExpandListColumn(NoNull2, "Rules"),
+    AddRid   = Table.AddColumn(RuleRows, "RuleId", each Record.FieldOrDefault([Rules], "RuleId"), type text),
+    AddSI    = Table.AddColumn(AddRid, "SI", each
+        let cm = Record.FieldOrDefault([Rules], "ConditionsMatched")
+        in  if cm = null then null else Record.FieldOrDefault(cm, "SensitiveInformation")),
+    Sel3     = Table.SelectColumns(AddSI, {"EventId", "RuleId", "SI"}),
+    NoNull3  = Table.SelectRows(Sel3, each [SI] <> null and not List.IsEmpty([SI])),
+    SIRows   = Table.ExpandListColumn(NoNull3, "SI"),
+    fields   = List.Distinct(List.Combine(List.Transform(List.Select(SIRows[SI], each _ <> null), each Record.FieldNames(_)))),
+    Expanded = Table.ExpandRecordColumn(SIRows, "SI", fields),
+    Result   = Table.AddColumn(Expanded, "RuleKey", each [EventId] & "|" & [RuleId], type text)
+in
+    Result

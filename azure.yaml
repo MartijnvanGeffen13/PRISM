@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: prism
+metadata:
+  template: prism@1.0.0
+
+services:
+  exchange:
+    project: ./src/exchange
+    language: python
+    host: function
+  sharepoint:
+    project: ./src/sharepoint
+    language: python
+    host: function
+  dlp:
+    project: ./src/dlp
+    language: python
+    host: function
+  entrausers:
+    project: ./src/entrausers
+    language: python
+    host: function

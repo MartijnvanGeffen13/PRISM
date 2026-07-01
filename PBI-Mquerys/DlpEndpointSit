@@ -1,0 +1,14 @@
+// DlpEndpointSit — child: one row per EndpointMetaData.SensitiveInfoTypeData entry.
+// Relationship: DlpEvent[EventId] 1 --- * DlpEndpointSit[EventId].
+let
+    Source = DlpStaging,
+    Add    = Table.AddColumn(Source, "Sit", each
+        let em = Record.FieldOrDefault([Record], "EndpointMetaData")
+        in  if em = null then null else Record.FieldOrDefault(em, "SensitiveInfoTypeData")),
+    Sel    = Table.SelectColumns(Add, {"EventId", "Sit"}),
+    NoNull = Table.SelectRows(Sel, each [Sit] <> null and not List.IsEmpty([Sit])),
+    ToRows = Table.ExpandListColumn(NoNull, "Sit"),
+    fields = List.Distinct(List.Combine(List.Transform(List.Select(ToRows[Sit], each _ <> null), each Record.FieldNames(_)))),
+    Result = Table.ExpandRecordColumn(ToRows, "Sit", fields)
+in
+    Result
