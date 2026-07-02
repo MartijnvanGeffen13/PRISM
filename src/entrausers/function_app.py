@@ -28,9 +28,13 @@ app = func.FunctionApp()
 _GRAPH_RESOURCE = "https://graph.microsoft.com"
 _HTTP_TIMEOUT = 60
 _DEFAULT_SELECT = (
-    "id,displayName,userPrincipalName,mail,jobTitle,department,officeLocation,"
-    "accountEnabled,createdDateTime,userType"
+    "id,displayName,givenName,surname,userPrincipalName,mail,mailNickname,imAddresses,jobTitle,department,companyName,employeeId,employeeType,employeeHireDate,officeLocation,streetAddress,city,state,postalCode,country,usageLocation,preferredLanguage,accountEnabled,userType,createdDateTime,assignedLicenses,identities"
 )
+"""
+_DEFAULT_SELECT = (
+    "id,displayName,givenName,surname,userPrincipalName,mail,mailNickname,otherMails,proxyAddresses,imAddresses,jobTitle,department,companyName,employeeId,employeeType,employeeHireDate,officeLocation,streetAddress,city,state,postalCode,country,usageLocation,businessPhones,mobilePhone,faxNumber,preferredLanguage,accountEnabled,userType,createdDateTime,creationType,externalUserState,externalUserStateChangeDateTime,ageGroup,consentProvidedForMinor,legalAgeGroupClassification,passwordPolicies,lastPasswordChangeDateTime,showInAddressList,assignedLicenses,assignedPlans,provisionedPlans,identities,onPremisesSyncEnabled,onPremisesImmutableId,onPremisesSamAccountName,onPremisesUserPrincipalName,onPremisesDomainName,onPremisesDistinguishedName,onPremisesSecurityIdentifier,onPremisesLastSyncDateTime,deletedDateTime"
+)
+"""
 _SCHEDULE = os.environ.get("SNAPSHOT_SCHEDULE", "0 */30 * * * *")
 
 
