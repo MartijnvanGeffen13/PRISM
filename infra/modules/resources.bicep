@@ -50,10 +50,13 @@ var allWorkloads = [
 var workloads = filter(allWorkloads, w => contains(enabledWorkloads, w.service))
 var enabledServices = map(workloads, w => w.service)
 
-// Deterministic Stream Analytics job resource ids (jobs are created further
-// below). Used as storage resource instance rules so the firewalled data lake
-// trusts the ASA managed identities without joining the VNet.
-var streamAnalyticsJobIds = [for w in workloads: resourceId('Microsoft.StreamAnalytics/streamingjobs', 'asa-${w.service}-${resourceToken}')]
+// Deterministic Stream Analytics job resource id (the single job is created
+// further below). Used as a storage resource instance rule so the firewalled
+// data lake trusts the ASA managed identity without joining the VNet.
+var streamAnalyticsJobName = 'asa-prism-${resourceToken}'
+var streamAnalyticsJobIds = empty(workloads) ? [] : [
+  resourceId('Microsoft.StreamAnalytics/streamingjobs', streamAnalyticsJobName)
+]
 
 // ---------------------------------------------------------------------------
 // Private networking: VNet, subnets, private DNS zones
@@ -224,34 +227,34 @@ module workloadEventHubRoles './eventHubRole.bicep' = [for (w, i) in workloads: 
 }]
 
 // ---------------------------------------------------------------------------
-// Stream Analytics — one job per Event Hub. Each reads its hub and lands
-// line-separated JSON in the data lake (Power BI reads these folders directly,
-// no Avro decode). Replaces Event Hubs Avro Capture for all three workloads.
+// Stream Analytics — a SINGLE job drains every enabled Event Hub and lands
+// line-separated JSON in the data lake, one output folder per workload (Power BI
+// reads these folders directly, no Avro decode). Consolidated into one job to
+// avoid paying the 1-SU floor per workload; streams stay isolated via separate
+// inputs, outputs and consumer groups.
 // ---------------------------------------------------------------------------
 
-module streamAnalytics './streamanalytics.bicep' = [for w in workloads: {
-  name: 'streamanalytics-${w.service}'
+module streamAnalytics './streamanalytics.bicep' = if (!empty(workloads)) {
+  name: 'streamanalytics'
   params: {
-    jobName: 'asa-${w.service}-${resourceToken}'
+    jobName: streamAnalyticsJobName
     location: location
     tags: tags
     namespaceName: eventHubs.outputs.namespaceName
-    eventHubName: w.eventHubName
-    consumerGroupName: 'asa-${w.service}'
     dataLakeName: dataLake.outputs.name
     containerName: 'auditlogs'
-    outputPrefix: w.outputPrefix
+    workloads: workloads
   }
-}]
+}
 
-// Grant each Stream Analytics identity write access to the data lake.
-module streamAnalyticsDataLakeRole './datalakeRole.bicep' = [for (w, i) in workloads: {
-  name: 'asa-datalake-role-${w.service}'
+// Grant the Stream Analytics identity write access to the data lake.
+module streamAnalyticsDataLakeRole './datalakeRole.bicep' = if (!empty(workloads)) {
+  name: 'asa-datalake-role'
   params: {
     dataLakeName: dataLake.outputs.name
-    principalId: streamAnalytics[i].outputs.principalId
+    principalId: streamAnalytics!.outputs.principalId
   }
-}]
+}
 
 output keyVaultName string = keyVault.outputs.name
 output dataLakeName string = dataLake.outputs.name
@@ -262,4 +265,4 @@ output dlpFunctionUrl string = contains(enabledServices, 'dlp') ? 'https://${wor
 output generalFunctionUrl string = contains(enabledServices, 'general') ? 'https://${workloadFuncs[indexOf(enabledServices, 'general')].outputs.defaultHostName}/api/webhook' : ''
 output azureadFunctionUrl string = contains(enabledServices, 'azuread') ? 'https://${workloadFuncs[indexOf(enabledServices, 'azuread')].outputs.defaultHostName}/api/webhook' : ''
 output entrausersFunctionName string = entrausersFunc.outputs.name
-output streamAnalyticsJobNames array = [for (w, i) in workloads: streamAnalytics[i].outputs.jobName]
+output streamAnalyticsJobNames array = empty(workloads) ? [] : [streamAnalytics!.outputs.jobName]

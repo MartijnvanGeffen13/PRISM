@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "1442656759818259385"
+      "templateHash": "16159724976217596187"
     }
   },
   "parameters": {
@@ -140,7 +140,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "2609139329044825436"
+              "templateHash": "2295838639842700808"
             }
           },
           "parameters": {
@@ -216,13 +216,6 @@
             }
           },
           "variables": {
-            "copy": [
-              {
-                "name": "streamAnalyticsJobIds",
-                "count": "[length(variables('workloads'))]",
-                "input": "[resourceId('Microsoft.StreamAnalytics/streamingjobs', format('asa-{0}-{1}', variables('workloads')[copyIndex('streamAnalyticsJobIds')].service, parameters('resourceToken')))]"
-              }
-            ],
             "allWorkloads": [
               {
                 "service": "exchange",
@@ -256,7 +249,9 @@
               }
             ],
             "workloads": "[filter(variables('allWorkloads'), lambda('w', contains(parameters('enabledWorkloads'), lambdaVariables('w').service)))]",
-            "enabledServices": "[map(variables('workloads'), lambda('w', lambdaVariables('w').service))]"
+            "enabledServices": "[map(variables('workloads'), lambda('w', lambdaVariables('w').service))]",
+            "streamAnalyticsJobName": "[format('asa-prism-{0}', parameters('resourceToken'))]",
+            "streamAnalyticsJobIds": "[if(empty(variables('workloads')), createArray(), createArray(resourceId('Microsoft.StreamAnalytics/streamingjobs', variables('streamAnalyticsJobName'))))]"
           },
           "resources": [
             {
@@ -3417,13 +3412,10 @@
               ]
             },
             {
-              "copy": {
-                "name": "streamAnalytics",
-                "count": "[length(variables('workloads'))]"
-              },
+              "condition": "[not(empty(variables('workloads')))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
-              "name": "[format('streamanalytics-{0}', variables('workloads')[copyIndex()].service)]",
+              "name": "streamanalytics",
               "properties": {
                 "expressionEvaluationOptions": {
                   "scope": "inner"
@@ -3431,7 +3423,7 @@
                 "mode": "Incremental",
                 "parameters": {
                   "jobName": {
-                    "value": "[format('asa-{0}-{1}', variables('workloads')[copyIndex()].service, parameters('resourceToken'))]"
+                    "value": "[variables('streamAnalyticsJobName')]"
                   },
                   "location": {
                     "value": "[parameters('location')]"
@@ -3442,20 +3434,14 @@
                   "namespaceName": {
                     "value": "[reference(resourceId('Microsoft.Resources/deployments', 'eventhubs'), '2025-04-01').outputs.namespaceName.value]"
                   },
-                  "eventHubName": {
-                    "value": "[variables('workloads')[copyIndex()].eventHubName]"
-                  },
-                  "consumerGroupName": {
-                    "value": "[format('asa-{0}', variables('workloads')[copyIndex()].service)]"
-                  },
                   "dataLakeName": {
                     "value": "[reference(resourceId('Microsoft.Resources/deployments', 'datalake'), '2025-04-01').outputs.name.value]"
                   },
                   "containerName": {
                     "value": "auditlogs"
                   },
-                  "outputPrefix": {
-                    "value": "[variables('workloads')[copyIndex()].outputPrefix]"
+                  "workloads": {
+                    "value": "[variables('workloads')]"
                   }
                 },
                 "template": {
@@ -3465,7 +3451,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "603266443041963337"
+                      "templateHash": "7844511212159237780"
                     }
                   },
                   "parameters": {
@@ -3493,19 +3479,6 @@
                         "description": "Event Hubs namespace name (input source)."
                       }
                     },
-                    "eventHubName": {
-                      "type": "string",
-                      "metadata": {
-                        "description": "Event Hub name to read from."
-                      }
-                    },
-                    "consumerGroupName": {
-                      "type": "string",
-                      "defaultValue": "asa-exchange",
-                      "metadata": {
-                        "description": "Dedicated consumer group name created for this job."
-                      }
-                    },
                     "dataLakeName": {
                       "type": "string",
                       "metadata": {
@@ -3519,30 +3492,25 @@
                         "description": "Blob container for JSON output."
                       }
                     },
-                    "outputPrefix": {
-                      "type": "string",
-                      "defaultValue": "exchange-json",
+                    "workloads": {
+                      "type": "array",
                       "metadata": {
-                        "description": "Prefix (folder) under the container where JSON files are written."
+                        "description": "Workloads processed by this job. Each item: { service, eventHubName, outputPrefix }. One Event Hub input and one data lake output folder are created per entry."
                       }
                     },
                     "streamingUnits": {
                       "type": "int",
                       "defaultValue": 1,
                       "metadata": {
-                        "description": "Number of streaming units allocated to the job."
+                        "description": "Number of streaming units allocated to the job (shared across all workloads)."
                       }
                     }
                   },
                   "variables": {
-                    "eventHubsDataReceiverRoleId": "a638d3c7-ab3a-418d-83e6-5f17a39d4fde"
+                    "eventHubsDataReceiverRoleId": "a638d3c7-ab3a-418d-83e6-5f17a39d4fde",
+                    "query": "[join(map(parameters('workloads'), lambda('w', format('SELECT * INTO [{0}-output] FROM [{1}-input]', lambdaVariables('w').service, lambdaVariables('w').service))), ';\n')]"
                   },
                   "resources": [
-                    {
-                      "type": "Microsoft.EventHub/namespaces/eventhubs/consumergroups",
-                      "apiVersion": "2024-01-01",
-                      "name": "[format('{0}/{1}/{2}', parameters('namespaceName'), parameters('eventHubName'), parameters('consumerGroupName'))]"
-                    },
                     {
                       "type": "Microsoft.StreamAnalytics/streamingjobs",
                       "apiVersion": "2021-10-01-preview",
@@ -3566,17 +3534,30 @@
                       }
                     },
                     {
+                      "copy": {
+                        "name": "consumerGroups",
+                        "count": "[length(parameters('workloads'))]"
+                      },
+                      "type": "Microsoft.EventHub/namespaces/eventhubs/consumergroups",
+                      "apiVersion": "2024-01-01",
+                      "name": "[format('{0}/{1}/{2}', parameters('namespaceName'), parameters('workloads')[copyIndex()].eventHubName, format('asa-{0}', parameters('workloads')[copyIndex()].service))]"
+                    },
+                    {
+                      "copy": {
+                        "name": "inputs",
+                        "count": "[length(parameters('workloads'))]"
+                      },
                       "type": "Microsoft.StreamAnalytics/streamingjobs/inputs",
                       "apiVersion": "2021-10-01-preview",
-                      "name": "[format('{0}/{1}', parameters('jobName'), 'exchange-input')]",
+                      "name": "[format('{0}/{1}', parameters('jobName'), format('{0}-input', parameters('workloads')[copyIndex()].service))]",
                       "properties": {
                         "type": "Stream",
                         "datasource": {
                           "type": "Microsoft.EventHub/EventHub",
                           "properties": {
                             "serviceBusNamespace": "[parameters('namespaceName')]",
-                            "eventHubName": "[parameters('eventHubName')]",
-                            "consumerGroupName": "[parameters('consumerGroupName')]",
+                            "eventHubName": "[parameters('workloads')[copyIndex()].eventHubName]",
+                            "consumerGroupName": "[format('asa-{0}', parameters('workloads')[copyIndex()].service)]",
                             "authenticationMode": "Msi"
                           }
                         },
@@ -3588,14 +3569,18 @@
                         }
                       },
                       "dependsOn": [
-                        "[resourceId('Microsoft.EventHub/namespaces/eventhubs/consumergroups', parameters('namespaceName'), parameters('eventHubName'), parameters('consumerGroupName'))]",
+                        "consumerGroups",
                         "[resourceId('Microsoft.StreamAnalytics/streamingjobs', parameters('jobName'))]"
                       ]
                     },
                     {
+                      "copy": {
+                        "name": "outputs",
+                        "count": "[length(parameters('workloads'))]"
+                      },
                       "type": "Microsoft.StreamAnalytics/streamingjobs/outputs",
                       "apiVersion": "2021-10-01-preview",
-                      "name": "[format('{0}/{1}', parameters('jobName'), 'datalake-output')]",
+                      "name": "[format('{0}/{1}', parameters('jobName'), format('{0}-output', parameters('workloads')[copyIndex()].service))]",
                       "properties": {
                         "datasource": {
                           "type": "Microsoft.Storage/Blob",
@@ -3606,7 +3591,7 @@
                               }
                             ],
                             "container": "[parameters('containerName')]",
-                            "pathPattern": "[format('{0}/{{date}}/{{time}}', parameters('outputPrefix'))]",
+                            "pathPattern": "[format('{0}/{{date}}/{{time}}', parameters('workloads')[copyIndex()].outputPrefix)]",
                             "dateFormat": "yyyy/MM/dd",
                             "timeFormat": "HH",
                             "authenticationMode": "Msi"
@@ -3630,19 +3615,23 @@
                       "name": "[format('{0}/{1}', parameters('jobName'), 'Transformation')]",
                       "properties": {
                         "streamingUnits": "[parameters('streamingUnits')]",
-                        "query": "SELECT * INTO [datalake-output] FROM [exchange-input]"
+                        "query": "[variables('query')]"
                       },
                       "dependsOn": [
-                        "[resourceId('Microsoft.StreamAnalytics/streamingjobs/outputs', parameters('jobName'), 'datalake-output')]",
-                        "[resourceId('Microsoft.StreamAnalytics/streamingjobs/inputs', parameters('jobName'), 'exchange-input')]",
-                        "[resourceId('Microsoft.StreamAnalytics/streamingjobs', parameters('jobName'))]"
+                        "inputs",
+                        "[resourceId('Microsoft.StreamAnalytics/streamingjobs', parameters('jobName'))]",
+                        "outputs"
                       ]
                     },
                     {
+                      "copy": {
+                        "name": "ehReceiverRoles",
+                        "count": "[length(parameters('workloads'))]"
+                      },
                       "type": "Microsoft.Authorization/roleAssignments",
                       "apiVersion": "2022-04-01",
-                      "scope": "[resourceId('Microsoft.EventHub/namespaces/eventhubs', parameters('namespaceName'), parameters('eventHubName'))]",
-                      "name": "[guid(resourceId('Microsoft.EventHub/namespaces/eventhubs', parameters('namespaceName'), parameters('eventHubName')), resourceId('Microsoft.StreamAnalytics/streamingjobs', parameters('jobName')), variables('eventHubsDataReceiverRoleId'))]",
+                      "scope": "[resourceId('Microsoft.EventHub/namespaces/eventhubs', parameters('namespaceName'), parameters('workloads')[copyIndex()].eventHubName)]",
+                      "name": "[guid(resourceId('Microsoft.EventHub/namespaces/eventhubs', parameters('namespaceName'), parameters('workloads')[copyIndex()].eventHubName), resourceId('Microsoft.StreamAnalytics/streamingjobs', parameters('jobName')), variables('eventHubsDataReceiverRoleId'))]",
                       "properties": {
                         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('eventHubsDataReceiverRoleId'))]",
                         "principalId": "[reference(resourceId('Microsoft.StreamAnalytics/streamingjobs', parameters('jobName')), '2021-10-01-preview', 'full').identity.principalId]",
@@ -3671,13 +3660,10 @@
               ]
             },
             {
-              "copy": {
-                "name": "streamAnalyticsDataLakeRole",
-                "count": "[length(variables('workloads'))]"
-              },
+              "condition": "[not(empty(variables('workloads')))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
-              "name": "[format('asa-datalake-role-{0}', variables('workloads')[copyIndex()].service)]",
+              "name": "asa-datalake-role",
               "properties": {
                 "expressionEvaluationOptions": {
                   "scope": "inner"
@@ -3688,7 +3674,7 @@
                     "value": "[reference(resourceId('Microsoft.Resources/deployments', 'datalake'), '2025-04-01').outputs.name.value]"
                   },
                   "principalId": {
-                    "value": "[reference(resourceId('Microsoft.Resources/deployments', format('streamanalytics-{0}', variables('workloads')[copyIndex()].service)), '2025-04-01').outputs.principalId.value]"
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'streamanalytics'), '2025-04-01').outputs.principalId.value]"
                   }
                 },
                 "template": {
@@ -3747,7 +3733,7 @@
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Resources/deployments', 'datalake')]",
-                "[resourceId('Microsoft.Resources/deployments', format('streamanalytics-{0}', variables('workloads')[copyIndex()].service))]"
+                "[resourceId('Microsoft.Resources/deployments', 'streamanalytics')]"
               ]
             }
           ],
@@ -3790,10 +3776,7 @@
             },
             "streamAnalyticsJobNames": {
               "type": "array",
-              "copy": {
-                "count": "[length(variables('workloads'))]",
-                "input": "[reference(resourceId('Microsoft.Resources/deployments', format('streamanalytics-{0}', variables('workloads')[copyIndex()].service)), '2025-04-01').outputs.jobName.value]"
-              }
+              "value": "[if(empty(variables('workloads')), createArray(), createArray(reference(resourceId('Microsoft.Resources/deployments', 'streamanalytics'), '2025-04-01').outputs.jobName.value))]"
             }
           }
         }

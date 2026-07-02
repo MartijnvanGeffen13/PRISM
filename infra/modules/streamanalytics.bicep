@@ -12,40 +12,35 @@ param tags object
 @description('Event Hubs namespace name (input source).')
 param namespaceName string
 
-@description('Event Hub name to read from.')
-param eventHubName string
-
-@description('Dedicated consumer group name created for this job.')
-param consumerGroupName string = 'asa-exchange'
-
 @description('Data lake storage account name (JSON output destination).')
 param dataLakeName string
 
 @description('Blob container for JSON output.')
 param containerName string = 'auditlogs'
 
-@description('Prefix (folder) under the container where JSON files are written.')
-param outputPrefix string = 'exchange-json'
+@description('Workloads processed by this job. Each item: { service, eventHubName, outputPrefix }. One Event Hub input and one data lake output folder are created per entry.')
+param workloads array
 
-@description('Number of streaming units allocated to the job.')
+@description('Number of streaming units allocated to the job (shared across all workloads).')
 param streamingUnits int = 1
 
 // Azure Event Hubs Data Receiver — lets the job's managed identity read events.
 var eventHubsDataReceiverRoleId = 'a638d3c7-ab3a-418d-83e6-5f17a39d4fde'
 
+// Combined query: one independent passthrough statement per workload. Streams
+// never mix — each Event Hub input lands in its own data lake output/folder.
+var query = join(map(workloads, w => 'SELECT * INTO [${w.service}-output] FROM [${w.service}-input]'), ';\n')
+
 resource namespace 'Microsoft.EventHub/namespaces@2024-01-01' existing = {
   name: namespaceName
-
-  resource eventHub 'eventhubs@2024-01-01' existing = {
-    name: eventHubName
-  }
 }
 
-// Dedicated consumer group so the job does not contend with other readers.
-resource consumerGroup 'Microsoft.EventHub/namespaces/eventhubs/consumergroups@2024-01-01' = {
-  parent: namespace::eventHub
-  name: consumerGroupName
-}
+// Existing per-workload Event Hubs (created by the eventhubs module) — used to
+// scope the Data Receiver role assignment for the job identity.
+resource eventHubs 'Microsoft.EventHub/namespaces/eventhubs@2024-01-01' existing = [for w in workloads: {
+  parent: namespace
+  name: w.eventHubName
+}]
 
 resource job 'Microsoft.StreamAnalytics/streamingjobs@2021-10-01-preview' = {
   name: jobName
@@ -68,19 +63,25 @@ resource job 'Microsoft.StreamAnalytics/streamingjobs@2021-10-01-preview' = {
   }
 }
 
-// Input — the Exchange Event Hub, authenticated with the job's managed identity
-// (local SAS auth is disabled on the namespace). JSON deserialization.
-resource ehInput 'Microsoft.StreamAnalytics/streamingjobs/inputs@2021-10-01-preview' = {
+// Dedicated consumer group per workload so the job does not contend with other readers.
+resource consumerGroups 'Microsoft.EventHub/namespaces/eventhubs/consumergroups@2024-01-01' = [for (w, i) in workloads: {
+  parent: eventHubs[i]
+  name: 'asa-${w.service}'
+}]
+
+// One Event Hub input per workload (managed identity auth; local SAS auth is
+// disabled on the namespace). JSON deserialization.
+resource inputs 'Microsoft.StreamAnalytics/streamingjobs/inputs@2021-10-01-preview' = [for (w, i) in workloads: {
   parent: job
-  name: 'exchange-input'
+  name: '${w.service}-input'
   properties: {
     type: 'Stream'
     datasource: {
       type: 'Microsoft.EventHub/EventHub'
       properties: {
         serviceBusNamespace: namespaceName
-        eventHubName: eventHubName
-        consumerGroupName: consumerGroup.name
+        eventHubName: w.eventHubName
+        consumerGroupName: 'asa-${w.service}'
         authenticationMode: 'Msi'
       }
     }
@@ -91,13 +92,16 @@ resource ehInput 'Microsoft.StreamAnalytics/streamingjobs/inputs@2021-10-01-prev
       }
     }
   }
-}
+  dependsOn: [
+    consumerGroups
+  ]
+}]
 
-// Output — line-separated JSON written to the data lake, authenticated with the
-// job's managed identity (shared key auth is disabled on the storage account).
-resource adlsOutput 'Microsoft.StreamAnalytics/streamingjobs/outputs@2021-10-01-preview' = {
+// One data lake output per workload — line-separated JSON under its own folder,
+// authenticated with the job's managed identity (shared key auth is disabled).
+resource outputs 'Microsoft.StreamAnalytics/streamingjobs/outputs@2021-10-01-preview' = [for w in workloads: {
   parent: job
-  name: 'datalake-output'
+  name: '${w.service}-output'
   properties: {
     datasource: {
       type: 'Microsoft.Storage/Blob'
@@ -108,7 +112,7 @@ resource adlsOutput 'Microsoft.StreamAnalytics/streamingjobs/outputs@2021-10-01-
           }
         ]
         container: containerName
-        pathPattern: '${outputPrefix}/{date}/{time}'
+        pathPattern: '${w.outputPrefix}/{date}/{time}'
         dateFormat: 'yyyy/MM/dd'
         timeFormat: 'HH'
         authenticationMode: 'Msi'
@@ -122,32 +126,32 @@ resource adlsOutput 'Microsoft.StreamAnalytics/streamingjobs/outputs@2021-10-01-
       }
     }
   }
-}
+}]
 
-// Passthrough query — every audit record from the hub becomes a JSON line.
+// Single transformation with one passthrough statement per workload.
 resource transformation 'Microsoft.StreamAnalytics/streamingjobs/transformations@2021-10-01-preview' = {
   parent: job
   name: 'Transformation'
   properties: {
     streamingUnits: streamingUnits
-    query: 'SELECT * INTO [datalake-output] FROM [exchange-input]'
+    query: query
   }
   dependsOn: [
-    ehInput
-    adlsOutput
+    inputs
+    outputs
   ]
 }
 
-// Allow the job identity to read events from the Exchange Event Hub.
-resource ehReceiverRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(namespace::eventHub.id, job.id, eventHubsDataReceiverRoleId)
-  scope: namespace::eventHub
+// Allow the job identity to read events from each workload's Event Hub.
+resource ehReceiverRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (w, i) in workloads: {
+  name: guid(eventHubs[i].id, job.id, eventHubsDataReceiverRoleId)
+  scope: eventHubs[i]
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', eventHubsDataReceiverRoleId)
     principalId: job.identity.principalId
     principalType: 'ServicePrincipal'
   }
-}
+}]
 
 output jobName string = job.name
 output principalId string = job.identity.principalId
