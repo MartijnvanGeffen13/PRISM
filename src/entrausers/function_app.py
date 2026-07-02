@@ -28,7 +28,7 @@ app = func.FunctionApp()
 _GRAPH_RESOURCE = "https://graph.microsoft.com"
 _HTTP_TIMEOUT = 60
 _DEFAULT_SELECT = (
-    "id,displayName,givenName,surname,userPrincipalName,mail,mailNickname,imAddresses,jobTitle,department,companyName,employeeId,employeeType,employeeHireDate,officeLocation,streetAddress,city,state,postalCode,country,usageLocation,preferredLanguage,accountEnabled,userType,createdDateTime,assignedLicenses,identities"
+    "id,displayName,givenName,surname,userPrincipalName,mail,mailNickname,imAddresses,jobTitle,department,companyName,employeeId,employeeType,employeeHireDate,officeLocation,streetAddress,city,state,postalCode,country,usageLocation,preferredLanguage,accountEnabled,userType,createdDateTime"
 )
 """
 _DEFAULT_SELECT = (
