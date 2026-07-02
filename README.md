@@ -106,6 +106,34 @@ $env:AZUREAD_WEBHOOK_URL    = "https://<azuread-func>.azurewebsites.net/api/webh
 > The Function App keys in `*_WEBHOOK_URL` are secrets — set them only as
 > environment variables for the current session; never commit them.
 
+## Start the Stream Analytics jobs
+
+Stream Analytics jobs are created in a **Stopped** state — ARM/Bicep (and `azd
+up`) provision them but **do not start them automatically**. Start each
+`asa-<workload>-<token>` job **once** after deployment so it begins draining its
+Event Hub into the Data Lake. This is a one-time action; the jobs stay running
+across future `azd up` / `azd deploy` runs.
+
+**Option A — Azure portal (GUI):** open each Stream Analytics job
+(`asa-exchange-…`, `asa-sharepoint-…`, `asa-dlp-…`, `asa-general-…`,
+`asa-azuread-…`) → **Overview** → **Start** → set **Job output start time** to
+**Now** → **Start**.
+
+**Option B — Azure CLI:** start every job in the resource group in one go
+(requires the `stream-analytics` extension — `az extension add -n stream-analytics`
+if prompted):
+
+```pwsh
+$rg = "rg-PRISM"   # your resource group (rg-<azd env name>)
+foreach ($job in (az stream-analytics job list -g $rg --query "[].name" -o tsv)) {
+  Write-Host "Starting $job ..."
+  az stream-analytics job start -g $rg --job-name $job --output-start-mode JobStartTime
+}
+```
+
+> Check state at any time:
+> `az stream-analytics job list -g rg-PRISM --query "[].{name:name,state:jobState}" -o table`
+
 ## Power BI reporting
 
 The `PBI-Mquerys/` folder contains the Power Query (M) definitions that build the
