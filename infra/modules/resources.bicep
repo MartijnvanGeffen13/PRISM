@@ -185,7 +185,7 @@ module entrausersFunc './functionApp.bicep' = {
       { name: 'DATALAKE_BLOB_ENDPOINT', value: dataLake.outputs.blobEndpoint }
       { name: 'DATALAKE_CONTAINER', value: 'reference' }
       { name: 'DATALAKE_BLOB', value: 'entra/users.json' }
-      { name: 'SNAPSHOT_SCHEDULE', value: '0 */10 * * * *' }
+      { name: 'SNAPSHOT_SCHEDULE', value: '0 0 2 * * *' }
     ]
   }
 }

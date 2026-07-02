@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "8451904148388518306"
+      "templateHash": "1442656759818259385"
     }
   },
   "parameters": {
@@ -140,7 +140,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "11205692395608649470"
+              "templateHash": "2609139329044825436"
             }
           },
           "parameters": {
@@ -2473,7 +2473,7 @@
                       },
                       {
                         "name": "SNAPSHOT_SCHEDULE",
-                        "value": "0 */10 * * * *"
+                        "value": "0 0 2 * * *"
                       }
                     ]
                   }

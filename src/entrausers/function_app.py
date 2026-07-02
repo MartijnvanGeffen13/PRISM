@@ -11,7 +11,7 @@ Configuration (environment variables / app settings):
   DATALAKE_CONTAINER                    (e.g. reference)
   DATALAKE_BLOB                         (e.g. entra/users.json)
   GRAPH_USER_SELECT                     ($select fields, comma separated)
-  SNAPSHOT_SCHEDULE                     (NCRONTAB, default weekly Mon 02:00 UTC)
+  SNAPSHOT_SCHEDULE                     (NCRONTAB, default daily 02:00 UTC)
 """
 import json
 import logging
@@ -30,12 +30,10 @@ _HTTP_TIMEOUT = 60
 _DEFAULT_SELECT = (
     "id,displayName,givenName,surname,userPrincipalName,mail,mailNickname,imAddresses,jobTitle,department,companyName,employeeId,employeeType,employeeHireDate,officeLocation,streetAddress,city,state,postalCode,country,usageLocation,preferredLanguage,accountEnabled,userType,createdDateTime"
 )
-"""
-_DEFAULT_SELECT = (
-    "id,displayName,givenName,surname,userPrincipalName,mail,mailNickname,otherMails,proxyAddresses,imAddresses,jobTitle,department,companyName,employeeId,employeeType,employeeHireDate,officeLocation,streetAddress,city,state,postalCode,country,usageLocation,businessPhones,mobilePhone,faxNumber,preferredLanguage,accountEnabled,userType,createdDateTime,creationType,externalUserState,externalUserStateChangeDateTime,ageGroup,consentProvidedForMinor,legalAgeGroupClassification,passwordPolicies,lastPasswordChangeDateTime,showInAddressList,assignedLicenses,assignedPlans,provisionedPlans,identities,onPremisesSyncEnabled,onPremisesImmutableId,onPremisesSamAccountName,onPremisesUserPrincipalName,onPremisesDomainName,onPremisesDistinguishedName,onPremisesSecurityIdentifier,onPremisesLastSyncDateTime,deletedDateTime"
-)
-"""
-_SCHEDULE = os.environ.get("SNAPSHOT_SCHEDULE", "0 */30 * * * *")
+
+#    "id,displayName,givenName,surname,userPrincipalName,mail,mailNickname,otherMails,proxyAddresses,imAddresses,jobTitle,department,companyName,employeeId,employeeType,employeeHireDate,officeLocation,streetAddress,city,state,postalCode,country,usageLocation,businessPhones,mobilePhone,faxNumber,preferredLanguage,accountEnabled,userType,createdDateTime,creationType,externalUserState,externalUserStateChangeDateTime,ageGroup,consentProvidedForMinor,legalAgeGroupClassification,passwordPolicies,lastPasswordChangeDateTime,showInAddressList,assignedLicenses,assignedPlans,provisionedPlans,identities,onPremisesSyncEnabled,onPremisesImmutableId,onPremisesSamAccountName,onPremisesUserPrincipalName,onPremisesDomainName,onPremisesDistinguishedName,onPremisesSecurityIdentifier,onPremisesLastSyncDateTime,deletedDateTime"
+
+_SCHEDULE = os.environ.get("SNAPSHOT_SCHEDULE", "0 0 2 * * *")
 
 
 def _get_graph_token() -> str:
