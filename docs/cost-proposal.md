@@ -71,6 +71,23 @@ Derived from `infra/modules/*.bicep` with all five workloads enabled:
 
 > **~$0.024 per 1,000 records** (≈ $24 per million) at this volume with all five workloads on. See §5 to scale cost down by disabling workloads.
 
+### 3.1 Lower volume — 10,000 records/day (~300K/month)
+
+Dropping ingestion by **100×** barely moves the bill, because the cost is fixed-infrastructure dominated (§4). Only the tiny volume-sensitive meters shrink:
+
+| Component | 1M/day | 10K/day | Change |
+|-----------|-------:|--------:|--------|
+| Stream Analytics (5 jobs) | $438 | $438 | — (fixed SU) |
+| Private Endpoints (22) | $162 | $161 | ~$0 (data charge gone) |
+| Log Analytics + App Insights | $52 | ~$12 | lower trace volume |
+| Function Apps (6) | $28 | ~$5 | fewer executions |
+| Event Hubs (1 TU) | $23 | $22 | ingress ≈ $0 |
+| Data Lake | $13 | ~$2 | ~0.5 GB/mo growth |
+| Everything else | $17 | $17 | — |
+| **Total (expected)** | **~$733** | **≈ $657 / month** | **only ~$75 less** |
+
+> At 10K/day the effective unit cost is **~$2.20 per 1,000 records** — ~90× higher per record than at 1M/day, purely because the same fixed platform is spread over far fewer records. **To cut cost at low volume, disable unneeded workloads (§5) or consolidate the Stream Analytics jobs (§6, Optimization #1) — reducing ingestion volume does almost nothing.**
+
 ---
 
 ## 4. Key insight: cost is dominated by *fixed* infrastructure, not volume
