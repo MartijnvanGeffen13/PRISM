@@ -16,6 +16,14 @@ services:
     project: ./src/dlp
     language: python
     host: function
+  general:
+    project: ./src/general
+    language: python
+    host: function
+  azuread:
+    project: ./src/azuread
+    language: python
+    host: function
   entrausers:
     project: ./src/entrausers
     language: python

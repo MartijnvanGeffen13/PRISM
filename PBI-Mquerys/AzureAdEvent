@@ -1,0 +1,25 @@
+// AzureAdEvent — fact table (one row per Audit.AzureActiveDirectory record). LOAD = ON.
+// Expands scalars + 1:1 metadata records; collapses simple scalar lists to
+// delimited text; drops array-of-record columns (ExtendedProperties,
+// ModifiedProperties, Actor, Target, ...) which become child tables.
+// Relationship: AzureAdEvent[EventId] 1 --- * each AzureAd* child[EventId].
+let
+    Source       = AzureAdStaging,
+    AllTopFields = List.Distinct(List.Combine(List.Transform(Source[Record], each Record.FieldNames(_)))),
+    Expanded     = Table.ExpandRecordColumn(Source, "Record", AllTopFields),
+    Flattened    = fnExpandAllRecords(Expanded),
+    listCols     = List.Select(Table.ColumnNames(Flattened), each
+        let vals = List.Select(Table.Column(Flattened, _), each _ <> null)
+        in  List.Count(vals) > 0 and Value.Is(List.First(vals), type list)),
+    Result = List.Accumulate(listCols, Flattened, (state, col) =>
+        let
+            vals      = List.Select(Table.Column(state, col), each _ <> null and not List.IsEmpty(_)),
+            firstElem = if List.IsEmpty(vals) then null else List.First(List.First(vals)),
+            isComplex = firstElem <> null and (Value.Is(firstElem, type record) or Value.Is(firstElem, type list))
+        in
+            if isComplex
+            then Table.RemoveColumns(state, {col})                                   // -> child table
+            else Table.TransformColumns(state, {{col, each if _ = null then null
+                     else Text.Combine(List.Transform(_, Text.From), ", "), type text}}))
+in
+    Result

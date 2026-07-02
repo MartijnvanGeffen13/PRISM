@@ -1,6 +1,7 @@
 # PRISM — Purview Reporting & Insights System for Metadata
 
-PRISM ingests Microsoft 365 audit data (Exchange, SharePoint, DLP) and a weekly
+PRISM ingests Microsoft 365 audit data (Exchange, SharePoint, DLP, General, and
+Azure Active Directory) and a weekly
 Entra users snapshot into an Azure Data Lake for Power BI reporting. It is
 deployed as a **self-contained, deploy-your-own-instance** template: every
 organization provisions its own isolated stack in its own subscription.
@@ -9,9 +10,12 @@ organization provisions its own isolated stack in its own subscription.
 
 ## Architecture
 
-Four Azure Function Apps land data into three Event Hubs, which capture into a
-single firewalled Data Lake (Gen2). Stream Analytics jobs shape the data; secrets
-are stored in Key Vault and read via managed identity. See
+Azure Function Apps land data into per-workload Event Hubs, which are drained by
+Stream Analytics jobs into a single firewalled Data Lake (Gen2). Which audit
+workloads deploy is controlled by the `enabledWorkloads` parameter
+(`infra/main.parameters.json`) — each entry provisions its own Function App,
+Event Hub, Stream Analytics job, and role assignments. Secrets are stored in Key
+Vault and read via managed identity. See
 [docs/solution-proposal.md](docs/solution-proposal.md) for the full design and
 [docs/cost-proposal.md](docs/cost-proposal.md) for cost estimates.
 
@@ -61,14 +65,17 @@ start the Office 365 Management API subscriptions (see below).
 ## Start the audit subscriptions (`createwebhooks/`)
 
 The Office 365 Management API only pushes audit content once a subscription is
-started for each content type. Run the three scripts in `createwebhooks/` **once**
-after `azd up` (and again if a subscription is ever stopped):
+started for each content type. Run the scripts in `createwebhooks/` **once**
+after `azd up` (and again if a subscription is ever stopped). Run only the
+scripts for the workloads you enabled in `enabledWorkloads`:
 
 | Script | Content type | Webhook env var |
 |--------|--------------|-----------------|
 | `CreateWebhookSubscription1.ps1` | `Audit.Exchange` | `EXCHANGE_WEBHOOK_URL` |
 | `CreateWebhookSubscription2.ps1` | `Audit.SharePoint` | `SHAREPOINT_WEBHOOK_URL` |
 | `CreateWebhookSubscription3.ps1` | `DLP.All` | `DLP_WEBHOOK_URL` |
+| `CreateWebhookSubscription4.ps1` | `Audit.General` | `GENERAL_WEBHOOK_URL` |
+| `CreateWebhookSubscription5.ps1` | `Audit.AzureActiveDirectory` | `AZUREAD_WEBHOOK_URL` |
 
 The scripts read **all** values from environment variables — nothing is hard-coded.
 Get each Function App's webhook URL (including its `?code=` function key) from the
@@ -85,11 +92,15 @@ $env:PURVIEW_CLIENT_SECRET = "<your-app-secret>"      # never committed
 $env:EXCHANGE_WEBHOOK_URL   = "https://<exchange-func>.azurewebsites.net/api/webhook?code=<key>"
 $env:SHAREPOINT_WEBHOOK_URL = "https://<sharepoint-func>.azurewebsites.net/api/webhook?code=<key>"
 $env:DLP_WEBHOOK_URL        = "https://<dlp-func>.azurewebsites.net/api/webhook?code=<key>"
+$env:GENERAL_WEBHOOK_URL    = "https://<general-func>.azurewebsites.net/api/webhook?code=<key>"
+$env:AZUREAD_WEBHOOK_URL    = "https://<azuread-func>.azurewebsites.net/api/webhook?code=<key>"
 
 # Run each once — a 200 with a "status: enabled" subscription confirms success
 ./createwebhooks/CreateWebhookSubscription1.ps1
 ./createwebhooks/CreateWebhookSubscription2.ps1
 ./createwebhooks/CreateWebhookSubscription3.ps1
+./createwebhooks/CreateWebhookSubscription4.ps1
+./createwebhooks/CreateWebhookSubscription5.ps1
 ```
 
 > The Function App keys in `*_WEBHOOK_URL` are secrets — set them only as
@@ -148,10 +159,12 @@ If a `PRISM.pbit` template is published with the release, this is the fastest pa
 |---------------|-------------|-----|
 | `DataLakeAccountName` | — (parameter) | Connection parameter, not a table. |
 | `fnExpandAllRecords` | **OFF** | Helper function. |
-| `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `UsersStaging` | **OFF** | Shared base queries; parsed once, consumed by children. |
+| `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `GeneralStaging`, `AzureAdStaging`, `UsersStaging` | **OFF** | Shared base queries; parsed once, consumed by children. |
 | `ExchangeEvent`, `ExchangeParameters`, `ExchangeOperationProperties` | **ON** | Exchange fact + children. |
 | `SharePointEvent`, `SharePointModifiedProperties` | **ON** | SharePoint fact + child. |
 | `DlpEvent`, `DlpEndpointSit`, `DlpExchangeRecipients`, `DlpPolicy`, `DlpRule`, `DlpSensitiveInfo` | **ON** | DLP fact + children. |
+| `GeneralEvent`, `GeneralExtendedProperties`, `GeneralModifiedProperties` | **ON** | Audit.General fact + children. |
+| `AzureAdEvent`, `AzureAdExtendedProperties`, `AzureAdModifiedProperties`, `AzureAdActor`, `AzureAdTarget` | **ON** | Audit.AzureActiveDirectory fact + children. |
 | `UsersEvent` | **ON** | Entra users fact. |
 
 ### 4. Relationships
@@ -170,16 +183,25 @@ to the child, and **active**.
 | `DlpEvent[EventId]` | `DlpPolicy[EventId]` | 1 → \* |
 | `DlpPolicy[PolicyKey]` | `DlpRule[PolicyKey]` | 1 → \* |
 | `DlpRule[RuleKey]` | `DlpSensitiveInfo[RuleKey]` | 1 → \* |
+| `GeneralEvent[EventId]` | `GeneralExtendedProperties[EventId]` | 1 → \* |
+| `GeneralEvent[EventId]` | `GeneralModifiedProperties[EventId]` | 1 → \* |
+| `AzureAdEvent[EventId]` | `AzureAdExtendedProperties[EventId]` | 1 → \* |
+| `AzureAdEvent[EventId]` | `AzureAdModifiedProperties[EventId]` | 1 → \* |
+| `AzureAdEvent[EventId]` | `AzureAdActor[EventId]` | 1 → \* |
+| `AzureAdEvent[EventId]` | `AzureAdTarget[EventId]` | 1 → \* |
 | `UsersEvent[userPrincipalName]` | `ExchangeEvent[UserId]` | 1 → \* |
 | `UsersEvent[userPrincipalName]` | `SharePointEvent[UserId]` | 1 → \* |
 | `UsersEvent[userPrincipalName]` | `DlpEvent[UserId]` | 1 → \* |
+| `UsersEvent[userPrincipalName]` | `GeneralEvent[UserId]` | 1 → \* |
+| `UsersEvent[userPrincipalName]` | `AzureAdEvent[UserId]` | 1 → \* |
 
 `UsersEvent` is a shared **user dimension**: its `userPrincipalName` maps
 one-to-many to each workload fact's `UserId`, so a single user filter slices
-Exchange, SharePoint, and DLP together. The three workload facts
-(`ExchangeEvent`, `SharePointEvent`, `DlpEvent`) remain independent of one another
-(no direct cross-workload relationship) — they are linked only through the shared
-`UsersEvent` dimension.
+Exchange, SharePoint, DLP, General, and Azure AD together. The workload facts
+(`ExchangeEvent`, `SharePointEvent`, `DlpEvent`, `GeneralEvent`, `AzureAdEvent`)
+remain independent of one another (no direct cross-workload relationship) — they
+are linked only through the shared `UsersEvent` dimension. Only build the
+relationships for the workloads you actually enabled in `enabledWorkloads`.
 
 ```mermaid
 erDiagram
@@ -191,9 +213,17 @@ erDiagram
     DlpEvent ||--o{ DlpPolicy : "EventId"
     DlpPolicy ||--o{ DlpRule : "PolicyKey"
     DlpRule ||--o{ DlpSensitiveInfo : "RuleKey"
+    GeneralEvent ||--o{ GeneralExtendedProperties : "EventId"
+    GeneralEvent ||--o{ GeneralModifiedProperties : "EventId"
+    AzureAdEvent ||--o{ AzureAdExtendedProperties : "EventId"
+    AzureAdEvent ||--o{ AzureAdModifiedProperties : "EventId"
+    AzureAdEvent ||--o{ AzureAdActor : "EventId"
+    AzureAdEvent ||--o{ AzureAdTarget : "EventId"
     UsersEvent ||--o{ ExchangeEvent : "userPrincipalName → UserId"
     UsersEvent ||--o{ SharePointEvent : "userPrincipalName → UserId"
     UsersEvent ||--o{ DlpEvent : "userPrincipalName → UserId"
+    UsersEvent ||--o{ GeneralEvent : "userPrincipalName → UserId"
+    UsersEvent ||--o{ AzureAdEvent : "userPrincipalName → UserId"
 ```
 
 
