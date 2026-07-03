@@ -189,7 +189,7 @@ If a `PRISM.pbit` template is published with the release, this is the fastest pa
 | `ExchangeEvent`, `ExchangeParameters`, `ExchangeOperationProperties` | **ON** | Exchange fact + children. |
 | `SharePointEvent`, `SharePointModifiedProperties` | **ON** | SharePoint fact + child. |
 | `DlpEvent`, `DlpEndpointSit`, `DlpExchangeRecipients`, `DlpPolicy`, `DlpRule`, `DlpSensitiveInfo` | **ON** | DLP fact + children. |
-| `GeneralEvent`, `GeneralExtendedProperties`, `GeneralModifiedProperties`, `GeneralDLPAction` | **ON** | Audit.General fact + children (`GeneralDLPAction` parses the JSON-encoded `NewValue` DLP-action detail). |
+| `GeneralEvent`, `GeneralDLPAction` | **ON** | Audit.General fact + child (`GeneralDLPAction` parses the JSON-encoded `NewValue` DLP-action detail). |
 | `AzureAdEvent`, `AzureAdExtendedProperties`, `AzureAdModifiedProperties`, `AzureAdActor`, `AzureAdTarget` | **ON** | Audit.AzureActiveDirectory fact + children. |
 | `UsersEvent` | **ON** | Entra users fact. |
 
@@ -209,8 +209,6 @@ to the child, and **active**.
 | `DlpEvent[EventId]` | `DlpPolicy[EventId]` | 1 → \* |
 | `DlpPolicy[PolicyKey]` | `DlpRule[PolicyKey]` | 1 → \* |
 | `DlpRule[RuleKey]` | `DlpSensitiveInfo[RuleKey]` | 1 → \* |
-| `GeneralEvent[EventId]` | `GeneralExtendedProperties[EventId]` | 1 → \* |
-| `GeneralEvent[EventId]` | `GeneralModifiedProperties[EventId]` | 1 → \* |
 | `GeneralEvent[EventId]` | `GeneralDLPAction[EventId]` | 1 → \* |
 | `AzureAdEvent[EventId]` | `AzureAdExtendedProperties[EventId]` | 1 → \* |
 | `AzureAdEvent[EventId]` | `AzureAdModifiedProperties[EventId]` | 1 → \* |
@@ -240,8 +238,6 @@ erDiagram
     DlpEvent ||--o{ DlpPolicy : "EventId"
     DlpPolicy ||--o{ DlpRule : "PolicyKey"
     DlpRule ||--o{ DlpSensitiveInfo : "RuleKey"
-    GeneralEvent ||--o{ GeneralExtendedProperties : "EventId"
-    GeneralEvent ||--o{ GeneralModifiedProperties : "EventId"
     GeneralEvent ||--o{ GeneralDLPAction : "EventId"
     AzureAdEvent ||--o{ AzureAdExtendedProperties : "EventId"
     AzureAdEvent ||--o{ AzureAdModifiedProperties : "EventId"

@@ -221,7 +221,7 @@ single shared **`UsersEvent` dimension**.
 | Helper function | OFF | `fnExpandAllRecords` |
 | Staging (base) | OFF | `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `GeneralStaging`, `AzureAdStaging`, `UsersStaging` |
 | Facts | ON | `ExchangeEvent`, `SharePointEvent`, `DlpEvent`, `GeneralEvent`, `AzureAdEvent`, `UsersEvent` |
-| Children | ON | `ExchangeParameters`, `ExchangeOperationProperties`, `SharePointModifiedProperties`, `DlpEndpointSit`, `DlpExchangeRecipients`, `DlpPolicy`, `DlpRule`, `DlpSensitiveInfo`, `GeneralExtendedProperties`, `GeneralModifiedProperties`, `GeneralDLPAction`, `AzureAdExtendedProperties`, `AzureAdModifiedProperties`, `AzureAdActor`, `AzureAdTarget` |
+| Children | ON | `ExchangeParameters`, `ExchangeOperationProperties`, `SharePointModifiedProperties`, `DlpEndpointSit`, `DlpExchangeRecipients`, `DlpPolicy`, `DlpRule`, `DlpSensitiveInfo`, `GeneralDLPAction`, `AzureAdExtendedProperties`, `AzureAdModifiedProperties`, `AzureAdActor`, `AzureAdTarget` |
 
 Each `*Staging` query parses its folder once and keeps the raw record; the fact
 query expands scalars + 1:1 records and **drops array-of-record columns**, which
@@ -242,8 +242,6 @@ from the `1` side to the child. Build only the ones for workloads you enabled.
 | `DlpEvent[EventId]` | `DlpPolicy[EventId]` |
 | `DlpPolicy[PolicyKey]` | `DlpRule[PolicyKey]` |
 | `DlpRule[RuleKey]` | `DlpSensitiveInfo[RuleKey]` |
-| `GeneralEvent[EventId]` | `GeneralExtendedProperties[EventId]` |
-| `GeneralEvent[EventId]` | `GeneralModifiedProperties[EventId]` |
 | `GeneralEvent[EventId]` | `GeneralDLPAction[EventId]` |
 | `AzureAdEvent[EventId]` | `AzureAdExtendedProperties[EventId]` |
 | `AzureAdEvent[EventId]` | `AzureAdModifiedProperties[EventId]` |
@@ -270,8 +268,6 @@ erDiagram
     DlpEvent ||--o{ DlpPolicy : "EventId"
     DlpPolicy ||--o{ DlpRule : "PolicyKey"
     DlpRule ||--o{ DlpSensitiveInfo : "RuleKey"
-    GeneralEvent ||--o{ GeneralExtendedProperties : "EventId"
-    GeneralEvent ||--o{ GeneralModifiedProperties : "EventId"
     GeneralEvent ||--o{ GeneralDLPAction : "EventId"
     AzureAdEvent ||--o{ AzureAdExtendedProperties : "EventId"
     AzureAdEvent ||--o{ AzureAdModifiedProperties : "EventId"
