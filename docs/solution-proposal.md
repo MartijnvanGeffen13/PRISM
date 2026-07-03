@@ -199,7 +199,7 @@ container: reference/
   entra/users.json        <- weekly snapshot, OVERWRITTEN each run
 ```
 
-- The audit streams **append** (immutable, partitioned by date/hour); the Entra users blob is a **single file overwritten weekly** so it always holds the current unique user set.
+- The audit streams **append** (immutable, partitioned by date — one daily folder `…/<workload>-json/yyyy/MM/dd/`); the Entra users blob is a **single file overwritten weekly** so it always holds the current unique user set.
 - Only the paths for **enabled** workloads are produced.
 - Apply **lifecycle management** on the storage account to tier/expire old data. The `reference/entra/` blob is excluded from expiry since it is always the latest snapshot.
 
@@ -221,7 +221,7 @@ single shared **`UsersEvent` dimension**.
 | Helper function | OFF | `fnExpandAllRecords` |
 | Staging (base) | OFF | `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `GeneralStaging`, `AzureAdStaging`, `UsersStaging` |
 | Facts | ON | `ExchangeEvent`, `SharePointEvent`, `DlpEvent`, `GeneralEvent`, `AzureAdEvent`, `UsersEvent` |
-| Children | ON | `ExchangeParameters`, `ExchangeOperationProperties`, `SharePointModifiedProperties`, `DlpEndpointSit`, `DlpExchangeRecipients`, `DlpPolicy`, `DlpRule`, `DlpSensitiveInfo`, `GeneralExtendedProperties`, `GeneralModifiedProperties`, `AzureAdExtendedProperties`, `AzureAdModifiedProperties`, `AzureAdActor`, `AzureAdTarget` |
+| Children | ON | `ExchangeParameters`, `ExchangeOperationProperties`, `SharePointModifiedProperties`, `DlpEndpointSit`, `DlpExchangeRecipients`, `DlpPolicy`, `DlpRule`, `DlpSensitiveInfo`, `GeneralExtendedProperties`, `GeneralModifiedProperties`, `GeneralDLPAction`, `AzureAdExtendedProperties`, `AzureAdModifiedProperties`, `AzureAdActor`, `AzureAdTarget` |
 
 Each `*Staging` query parses its folder once and keeps the raw record; the fact
 query expands scalars + 1:1 records and **drops array-of-record columns**, which
@@ -244,6 +244,7 @@ from the `1` side to the child. Build only the ones for workloads you enabled.
 | `DlpRule[RuleKey]` | `DlpSensitiveInfo[RuleKey]` |
 | `GeneralEvent[EventId]` | `GeneralExtendedProperties[EventId]` |
 | `GeneralEvent[EventId]` | `GeneralModifiedProperties[EventId]` |
+| `GeneralEvent[EventId]` | `GeneralDLPAction[EventId]` |
 | `AzureAdEvent[EventId]` | `AzureAdExtendedProperties[EventId]` |
 | `AzureAdEvent[EventId]` | `AzureAdModifiedProperties[EventId]` |
 | `AzureAdEvent[EventId]` | `AzureAdActor[EventId]` |
@@ -271,6 +272,7 @@ erDiagram
     DlpRule ||--o{ DlpSensitiveInfo : "RuleKey"
     GeneralEvent ||--o{ GeneralExtendedProperties : "EventId"
     GeneralEvent ||--o{ GeneralModifiedProperties : "EventId"
+    GeneralEvent ||--o{ GeneralDLPAction : "EventId"
     AzureAdEvent ||--o{ AzureAdExtendedProperties : "EventId"
     AzureAdEvent ||--o{ AzureAdModifiedProperties : "EventId"
     AzureAdEvent ||--o{ AzureAdActor : "EventId"

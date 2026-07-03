@@ -112,9 +112,8 @@ resource outputs 'Microsoft.StreamAnalytics/streamingjobs/outputs@2021-10-01-pre
           }
         ]
         container: containerName
-        pathPattern: '${w.outputPrefix}/{date}/{time}'
+        pathPattern: '${w.outputPrefix}/{date}'
         dateFormat: 'yyyy/MM/dd'
-        timeFormat: 'HH'
         authenticationMode: 'Msi'
       }
     }

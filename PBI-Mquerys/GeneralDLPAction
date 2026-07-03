@@ -1,0 +1,39 @@
+// GeneralDLPAction — child: the DLP action detail carried in the General NewValue field.
+// NewValue is stored as a JSON-encoded STRING, e.g.
+//   {"DlpAction":1,"JustificationText":null,
+//    "PolicyTip":{"GeneralText":"...","ComplianceUrl":"","MatchedConditionDescriptions":["All Credential Types"]},
+//    "UserAction":0,"VerdictDetails":0}
+// so it is parsed with Json.Document and expanded into columns. Nested records (PolicyTip)
+// are flattened to PolicyTip.* columns and scalar lists (MatchedConditionDescriptions) are
+// joined to delimited text. One row per event that has a NewValue action object, keyed by
+// EventId. When none are present an empty typed table is returned so the refresh and the
+// GeneralEvent[EventId] relationship stay valid.
+// Relationship: GeneralEvent[EventId] 1 --- * GeneralDLPAction[EventId].
+let
+    Source    = GeneralStaging,
+    Add       = Table.AddColumn(Source, "Raw", each Record.FieldOrDefault([Record], "NewValue")),
+    Sel       = Table.SelectColumns(Add, {"EventId", "Raw"}),
+    NoNull    = Table.SelectRows(Sel, each [Raw] <> null and [Raw] <> ""),
+    // NewValue is a JSON-encoded string — parse it (already-structured values pass through).
+    Parsed    = Table.AddColumn(NoNull, "NewValue", each
+                    let v = [Raw] in if v is text then (try Json.Document(v) otherwise null) else v),
+    OnlyRec   = Table.SelectRows(Parsed, each [NewValue] is record),
+    Keep      = Table.SelectColumns(OnlyRec, {"EventId", "NewValue"}),
+    fields    = if Table.IsEmpty(Keep) then {}
+                else List.Distinct(List.Combine(List.Transform(Keep[NewValue], each Record.FieldNames(_)))),
+    Expanded  = if Table.IsEmpty(Keep) or List.IsEmpty(fields)
+                then #table(type table [EventId = text], {})
+                else Table.ExpandRecordColumn(Keep, "NewValue", fields),
+    // Flatten nested records (e.g. PolicyTip -> PolicyTip.GeneralText, PolicyTip.*).
+    Flattened = fnExpandAllRecords(Expanded),
+    // Collapse any remaining scalar-list columns (e.g. MatchedConditionDescriptions) to text.
+    listCols  = List.Select(Table.ColumnNames(Flattened), each
+                    let cvals = List.Select(Table.Column(Flattened, _), each _ <> null)
+                    in  List.Count(cvals) > 0 and Value.Is(List.First(cvals), type list)),
+    Result    = List.Accumulate(listCols, Flattened, (state, col) =>
+                    Table.TransformColumns(state, {{col, each if _ = null then null
+                        else Text.Combine(List.Transform(_, (x) =>
+                            if x is record or x is list then Text.FromBinary(Json.FromValue(x)) else Text.From(x)), ", "),
+                        type text}}))
+in
+    Result

@@ -3591,9 +3591,8 @@
                               }
                             ],
                             "container": "[parameters('containerName')]",
-                            "pathPattern": "[format('{0}/{{date}}/{{time}}', parameters('workloads')[copyIndex()].outputPrefix)]",
+                            "pathPattern": "[format('{0}/{{date}}', parameters('workloads')[copyIndex()].outputPrefix)]",
                             "dateFormat": "yyyy/MM/dd",
-                            "timeFormat": "HH",
                             "authenticationMode": "Msi"
                           }
                         },
