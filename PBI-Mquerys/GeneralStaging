@@ -4,7 +4,17 @@
 let
     Source = AzureStorage.DataLake("https://" & DataLakeAccountName & ".dfs.core.windows.net/auditlogs/general-json"),
     Files  = Table.SelectRows(Source, each [Attributes]?[Hidden]? <> true),
-    Parsed = Table.AddColumn(Files, "Records", each
+    Cutoff = Date.AddDays(Date.From(DateTime.LocalNow()), - LoadDays),
+    Recent = Table.SelectRows(Files, each
+        let
+            after = Text.AfterDelimiter([Folder Path], "-json/"),
+            segs  = List.Select(Text.Split(after, "/"), each _ <> ""),
+            y     = try Number.From(segs{0}) otherwise null,
+            m     = try Number.From(segs{1}) otherwise null,
+            d     = try Number.From(segs{2}) otherwise null,
+            pdate = if y = null or m = null or d = null then null else (try #date(y, m, d) otherwise null)
+        in  pdate <> null and pdate >= Cutoff),
+    Parsed = Table.AddColumn(Recent, "Records", each
         let
             lines    = Lines.FromBinary([Content], null, null, 65001),   // 65001 = UTF-8
             nonEmpty = List.Select(lines, each Text.Trim(_) <> ""),

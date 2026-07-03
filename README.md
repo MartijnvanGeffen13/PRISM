@@ -164,12 +164,17 @@ If a `PRISM.pbit` template is published with the release, this is the fastest pa
 
 ### 3. Option B — import the M queries manually
 
-1. **Create the parameter first.** In **Home → Transform data** (Power Query
+1. **Create the parameters first.** In **Home → Transform data** (Power Query
    Editor), **New Source → Blank Query → Advanced Editor**, paste the contents of
    `PBI-Mquerys/DataLakeAccountName`, and rename the query to exactly
    `DataLakeAccountName`. Power BI recognises the `IsParameterQuery` annotation and
    treats it as a parameter. Set its **Current Value** to your storage account name.
-   (Alternatively use **Manage Parameters → New**, Type = Text.)
+   (Alternatively use **Manage Parameters → New**, Type = Text.) Do the same with
+   `PBI-Mquerys/LoadDays` (rename to exactly `LoadDays`, Type = Number) — it sets the
+   rolling window of audit history to load, in days (default **360**). Every audit
+   `*Staging` query reads only day-partition folders newer than today minus `LoadDays`,
+   so refreshes scan a bounded window instead of the whole lake. (`UsersStaging` is a
+   single overwritten snapshot and ignores it.)
 2. **Add each remaining query.** For every other file in `PBI-Mquerys/`:
    **New Source → Blank Query → Advanced Editor**, paste the file's contents, and
    **rename the query to match the file name exactly** (e.g. `DlpStaging`,
@@ -184,6 +189,7 @@ If a `PRISM.pbit` template is published with the release, this is the fastest pa
 | Query / group | Enable load | Why |
 |---------------|-------------|-----|
 | `DataLakeAccountName` | — (parameter) | Connection parameter, not a table. |
+| `LoadDays` | — (parameter) | Rolling window (days) of history to load; default 360. Not a table. |
 | `fnExpandAllRecords` | **OFF** | Helper function. |
 | `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `GeneralStaging`, `AzureAdStaging`, `UsersStaging` | **OFF** | Shared base queries; parsed once, consumed by children. |
 | `ExchangeEvent`, `ExchangeParameters`, `ExchangeOperationProperties` | **ON** | Exchange fact + children. |
@@ -249,6 +255,55 @@ erDiagram
     UsersEvent ||--o{ GeneralEvent : "userPrincipalName → UserId"
     UsersEvent ||--o{ AzureAdEvent : "userPrincipalName → UserId"
 ```
+
+
+### 5. (Optional) Incremental refresh — faster refreshes (Power BI Premium / PPU / Fabric)
+
+By default every refresh re-reads the **entire** data lake, which gets slower as
+history grows ("waiting for datalake storage"). Incremental refresh makes Power BI
+re-read only the **most recent** daily partitions and leave older data untouched,
+so refresh time stays flat. It requires **Power BI Premium, Premium-Per-User (PPU),
+or Fabric** and the dataset **published to the service**.
+
+**Prerequisite (query side).** The `*Staging` queries must filter their files on two
+datetime parameters named exactly `RangeStart` and `RangeEnd`, derived from the
+`yyyy/MM/dd` folder path (this pairs with the daily ASA output). This is **not wired
+in the shipped queries yet** — ask a maintainer to enable it (or see the staging
+pattern in the project notes) before configuring the policy below. Power BI's
+incremental refresh only works when the parameters are consumed by a folded/pruning
+filter, so history outside `[RangeStart, RangeEnd)` is never downloaded.
+
+**Configure the policy (per fact table):**
+
+1. Publish the report to a **Premium/PPU/Fabric** workspace (incremental refresh is
+   defined in Desktop but only executes in the service).
+2. In **Power BI Desktop**, confirm the `RangeStart` and `RangeEnd` parameters exist
+   (**Home → Transform data → Manage Parameters**), both **Date/Time**.
+3. In the **Data** pane, **right-click a fact table** (e.g. `GeneralEvent`,
+   `ExchangeEvent`, `DlpEvent`, `SharePointEvent`, `AzureAdEvent`, `UsersEvent`) →
+   **Incremental refresh**.
+4. Toggle **Incrementally refresh this table** to **On**.
+5. Set **Archive data starting** *N* years/months before refresh date (how much
+   history to keep, e.g. **Store rows from the past 2 years**).
+6. Set **Incrementally refresh data starting** *M* days before refresh date (the
+   window actually re-read each run, e.g. **Refresh rows from the past 7 days**).
+   Smaller = faster refresh.
+7. (Optional) Enable **Detect data changes** or **Only refresh complete days** if you
+   want finer control; leave **Get the latest data in real time (DirectQuery)** off
+   for this import model.
+8. **Apply**, then **Publish** to the Premium/PPU/Fabric workspace and run a refresh.
+   The **first** service refresh is a full load (it builds the partitions); every
+   refresh after only re-reads the last *M* days.
+
+**Repeat steps 3–8 for each enabled fact table.** The per-workload child tables
+(`GeneralDLPAction`, `Dlp*`, `AzureAd*`, …) read the same filtered staging, so they
+inherit the pruning automatically — you do **not** configure a policy on them.
+
+> **Already shipped:** the `*Staging` queries implement a manual rolling window via the
+> `LoadDays` parameter (default **360** days), so even on plain Pro/Desktop each refresh
+> only scans the last `LoadDays` of day-partition folders (a big speedup; the report then
+> holds a rolling window of history rather than all of it). Incremental refresh (above)
+> is the Premium/PPU/Fabric upgrade that additionally skips re-reading days already loaded.
 
 
 ## Security notes

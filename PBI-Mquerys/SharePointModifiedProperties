@@ -2,7 +2,7 @@
 // (Name / NewValue / OldValue) where present. LOAD = ON.
 // Relationship: SharePointEvent[EventId] 1 --- * SharePointModifiedProperties[EventId].
 let
-    Source = SharePointStaging,
+    Source = Table.Buffer(SharePointStaging),
     Add    = Table.AddColumn(Source, "ModifiedProperties", each Record.FieldOrDefault([Record], "ModifiedProperties")),
     Sel    = Table.SelectColumns(Add, {"EventId", "ModifiedProperties"}),
     NoNull = Table.SelectRows(Sel, each [ModifiedProperties] <> null and not List.IsEmpty([ModifiedProperties])),

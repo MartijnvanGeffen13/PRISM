@@ -10,7 +10,7 @@
 // GeneralEvent[EventId] relationship stay valid.
 // Relationship: GeneralEvent[EventId] 1 --- * GeneralDLPAction[EventId].
 let
-    Source    = GeneralStaging,
+    Source    = Table.Buffer(GeneralStaging),
     Add       = Table.AddColumn(Source, "Raw", each Record.FieldOrDefault([Record], "NewValue")),
     Sel       = Table.SelectColumns(Add, {"EventId", "Raw"}),
     NoNull    = Table.SelectRows(Sel, each [Raw] <> null and [Raw] <> ""),

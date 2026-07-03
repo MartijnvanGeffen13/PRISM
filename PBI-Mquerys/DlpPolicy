@@ -2,7 +2,7 @@
 // Keys: PolicyKey = EventId|PolicyId (used to relate DlpRule).
 // Relationship: DlpEvent[EventId] 1 --- * DlpPolicy[EventId].
 let
-    Source  = DlpStaging,
+    Source  = Table.Buffer(DlpStaging),
     Add     = Table.AddColumn(Source, "PolicyDetails", each Record.FieldOrDefault([Record], "PolicyDetails")),
     Sel     = Table.SelectColumns(Add, {"EventId", "PolicyDetails"}),
     NoNull  = Table.SelectRows(Sel, each [PolicyDetails] <> null and not List.IsEmpty([PolicyDetails])),

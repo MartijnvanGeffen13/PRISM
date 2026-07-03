@@ -3,7 +3,7 @@
 // References the shared DlpStaging query. Relationship:
 //   DlpEvent[EventId] 1 --- * DlpExchangeRecipients[EventId]
 let
-    Source = DlpStaging,
+    Source = Table.Buffer(DlpStaging),
 
     // ExchangeMetaData is a top-level record on DLP records that involve email.
     AddExch = Table.AddColumn(Source, "Exch", each Record.FieldOrDefault([Record], "ExchangeMetaData")),

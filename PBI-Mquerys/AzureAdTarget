@@ -3,7 +3,7 @@
 // each with an ID and a numeric Type (same enumeration as AzureAdActor).
 // Relationship: AzureAdEvent[EventId] 1 --- * AzureAdTarget[EventId].
 let
-    Source = AzureAdStaging,
+    Source = Table.Buffer(AzureAdStaging),
     Add    = Table.AddColumn(Source, "Target", each Record.FieldOrDefault([Record], "Target")),
     Sel    = Table.SelectColumns(Add, {"EventId", "Target"}),
     NoNull = Table.SelectRows(Sel, each [Target] <> null and not List.IsEmpty([Target])),

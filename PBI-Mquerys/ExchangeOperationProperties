@@ -1,7 +1,7 @@
 // ExchangeOperationProperties — child: one row per OperationProperty (Name/Value). LOAD = ON.
 // Relationship: ExchangeEvent[EventId] 1 --- * ExchangeOperationProperties[EventId].
 let
-    Source = ExchangeStaging,
+    Source = Table.Buffer(ExchangeStaging),
     Add    = Table.AddColumn(Source, "OperationProperties", each Record.FieldOrDefault([Record], "OperationProperties")),
     Sel    = Table.SelectColumns(Add, {"EventId", "OperationProperties"}),
     NoNull = Table.SelectRows(Sel, each [OperationProperties] <> null and not List.IsEmpty([OperationProperties])),

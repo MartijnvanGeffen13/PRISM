@@ -2,7 +2,7 @@
 // (Name / NewValue / OldValue) where present. LOAD = ON.
 // Relationship: AzureAdEvent[EventId] 1 --- * AzureAdModifiedProperties[EventId].
 let
-    Source = AzureAdStaging,
+    Source = Table.Buffer(AzureAdStaging),
     Add    = Table.AddColumn(Source, "ModifiedProperties", each Record.FieldOrDefault([Record], "ModifiedProperties")),
     Sel    = Table.SelectColumns(Add, {"EventId", "ModifiedProperties"}),
     NoNull = Table.SelectRows(Sel, each [ModifiedProperties] <> null and not List.IsEmpty([ModifiedProperties])),

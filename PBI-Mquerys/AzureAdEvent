@@ -4,7 +4,7 @@
 // ModifiedProperties, Actor, Target, ...) which become child tables.
 // Relationship: AzureAdEvent[EventId] 1 --- * each AzureAd* child[EventId].
 let
-    Source       = AzureAdStaging,
+    Source       = Table.Buffer(AzureAdStaging),
     AllTopFields = List.Distinct(List.Combine(List.Transform(Source[Record], each Record.FieldNames(_)))),
     Expanded     = Table.ExpandRecordColumn(Source, "Record", AllTopFields),
     Flattened    = fnExpandAllRecords(Expanded),

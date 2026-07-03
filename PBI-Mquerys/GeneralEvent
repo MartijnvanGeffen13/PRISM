@@ -4,7 +4,7 @@
 // ModifiedProperties, ...) which become child tables.
 // Relationship: GeneralEvent[EventId] 1 --- * each General* child[EventId].
 let
-    Source       = GeneralStaging,
+    Source       = Table.Buffer(GeneralStaging),
     AllTopFields = List.Distinct(List.Combine(List.Transform(Source[Record], each Record.FieldNames(_)))),
     Expanded     = Table.ExpandRecordColumn(Source, "Record", AllTopFields),
     Flattened    = fnExpandAllRecords(Expanded),

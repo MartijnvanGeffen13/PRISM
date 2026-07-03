@@ -4,7 +4,7 @@
 // (PolicyDetails, SensitiveInfoTypeData, ...) which become child tables.
 // Relationship: DlpEvent[EventId] 1 --- * each Dlp* child[EventId].
 let
-    Source       = DlpStaging,
+    Source       = Table.Buffer(DlpStaging),
     AllTopFields = List.Distinct(List.Combine(List.Transform(Source[Record], each Record.FieldNames(_)))),
     Expanded     = Table.ExpandRecordColumn(Source, "Record", AllTopFields),
     Flattened    = fnExpandAllRecords(Expanded),

@@ -4,7 +4,7 @@
 // (assignedLicenses, assignedPlans, ...) which become child tables if you
 // extend GRAPH_USER_SELECT later. Key: UserId.
 let
-    Source    = UsersStaging,
+    Source    = Table.Buffer(UsersStaging),
     AllFields = List.Distinct(List.Combine(List.Transform(Source[User], each Record.FieldNames(_)))),
     Expanded  = Table.ExpandRecordColumn(Source, "User", AllFields),
     Flattened = fnExpandAllRecords(Expanded),

@@ -217,7 +217,7 @@ single shared **`UsersEvent` dimension**.
 
 | Tier | Load | Queries |
 |------|------|---------|
-| Parameter | — | `DataLakeAccountName` |
+| Parameter | — | `DataLakeAccountName`, `LoadDays` |
 | Helper function | OFF | `fnExpandAllRecords` |
 | Staging (base) | OFF | `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `GeneralStaging`, `AzureAdStaging`, `UsersStaging` |
 | Facts | ON | `ExchangeEvent`, `SharePointEvent`, `DlpEvent`, `GeneralEvent`, `AzureAdEvent`, `UsersEvent` |
