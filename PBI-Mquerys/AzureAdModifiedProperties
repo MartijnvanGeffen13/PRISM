@@ -1,8 +1,8 @@
-// SharePointModifiedProperties — child: one row per ModifiedProperty
+// AzureAdModifiedProperties — child: one row per ModifiedProperty
 // (Name / NewValue / OldValue) where present. LOAD = ON.
-// Relationship: SharePointEvent[EventId] 1 --- * SharePointModifiedProperties[EventId].
+// Relationship: AzureAdEvent[EventId] 1 --- * AzureAdModifiedProperties[EventId].
 let
-    Source = Table.Buffer(SharePointStaging),
+    Source = Table.Buffer(AzureAdStaging),
     Add    = Table.AddColumn(Source, "ModifiedProperties", each Record.FieldOrDefault([Record], "ModifiedProperties")),
     Sel    = Table.SelectColumns(Add, {"EventId", "ModifiedProperties"}),
     NoNull = Table.SelectRows(Sel, each [ModifiedProperties] <> null and not List.IsEmpty([ModifiedProperties])),

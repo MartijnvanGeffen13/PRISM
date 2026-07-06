@@ -1,0 +1,12 @@
+// AzureAdExtendedProperties — child: one row per ExtendedProperty (Name/Value). LOAD = ON.
+// Relationship: AzureAdEvent[EventId] 1 --- * AzureAdExtendedProperties[EventId].
+let
+    Source = Table.Buffer(AzureAdStaging),
+    Add    = Table.AddColumn(Source, "ExtendedProperties", each Record.FieldOrDefault([Record], "ExtendedProperties")),
+    Sel    = Table.SelectColumns(Add, {"EventId", "ExtendedProperties"}),
+    NoNull = Table.SelectRows(Sel, each [ExtendedProperties] <> null and not List.IsEmpty([ExtendedProperties])),
+    ToRows = Table.ExpandListColumn(NoNull, "ExtendedProperties"),
+    fields = List.Distinct(List.Combine(List.Transform(List.Select(ToRows[ExtendedProperties], each _ <> null), each Record.FieldNames(_)))),
+    Result = Table.ExpandRecordColumn(ToRows, "ExtendedProperties", fields)
+in
+    Result

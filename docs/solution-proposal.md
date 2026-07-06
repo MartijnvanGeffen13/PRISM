@@ -1,7 +1,10 @@
 # PRISM (Purview Reporting & Insights System for Metadata) Proposal
 
-> **Status:** Proposal / Design only. No infrastructure or application code is provisioned yet.
-> This document describes the end-to-end flow and the Azure resources to be created **from scratch** in a **single resource group**.
+> **Status:** Implemented. Infrastructure (Bicep + `azd`) and application code are
+> provisioned **from scratch** in a **single resource group**. Which audit
+> workloads deploy is controlled by the `enabledWorkloads` parameter
+> (`infra/main.parameters.json`).
+> This document describes the end-to-end flow and the Azure resources created.
 
 ---
 
@@ -23,27 +26,48 @@ $clientSecret = "<REDACTED>"   # createwebhooks/CreateWebhookSubscription1.ps1, 
 
 ## 1. Goal
 
-Stream **Microsoft Purview / Microsoft 365 audit activity** (Exchange, SharePoint, DLP, etc.) into an **Azure Data Lake (ADLS Gen2)** so it can be queried, retained long-term, and consumed by downstream analytics / SIEM tooling.
+Stream **Microsoft Purview / Microsoft 365 audit activity** (Exchange, SharePoint,
+DLP, General, and Azure Active Directory) into an **Azure Data Lake (ADLS Gen2)**
+so it can be queried, retained long-term, and consumed by downstream analytics /
+SIEM tooling and Power BI.
 
-The Office 365 Management Activity API does not push logs to a data lake directly. Instead it sends lightweight **webhook notifications** that point to content blobs. A small Azure Function pulls those blobs and forwards the records to an **Event Hub**, whose built-in **Capture** feature lands the data in the **data lake** automatically.
+The Office 365 Management Activity API does not push logs to a data lake directly. Instead it sends lightweight **webhook notifications** that point to content blobs. A small Azure Function pulls those blobs and forwards the records to an **Event Hub**. A **single, shared Azure Stream Analytics** job then drains every enabled hub — with one input and one output folder per workload — and lands **line-separated JSON (NDJSON)** in the **data lake** (Power BI reads these folders directly — no Avro decode).
 
 ### Per-content-type isolation (design principle)
 
-Each of the three subscription scripts in `createwebhooks/` maps to **its own dedicated Azure Function App** and **its own Event Hub**. All three land data in the **same data lake storage account**, but each writes to a **separate blob path / container**, keeping the streams fully isolated end-to-end:
+Each enabled workload maps to **its own dedicated Azure Function App** and **its
+own Event Hub**, and gets **its own input/output on the shared Stream Analytics
+job**. All workloads land data in the
+**same data lake storage account**, but each writes to a **separate blob path**,
+keeping the streams fully isolated end-to-end. The set of deployed workloads is
+driven by the `enabledWorkloads` array — add or remove an entry to turn an entire
+pipeline on or off.
 
-| Script | Content type | Function App | Event Hub | Data Lake blob path |
-|--------|--------------|--------------|-----------|---------------------|
-| `CreateWebhookSubscription1.ps1` | `Audit.Exchange` | `func-prism-exchange` | `eh-exchange` | `auditlogs/exchange/...` |
-| `CreateWebhookSubscription2.ps1` | `Audit.SharePoint` | `func-prism-sharepoint` | `eh-sharepoint` | `auditlogs/sharepoint/...` |
-| `CreateWebhookSubscription3.ps1` | `DLP.All` | `func-prism-dlp` | `eh-dlp` | `auditlogs/dlp/...` |
+| Script | Content type | Function App | Event Hub | ASA input → output | Data Lake blob path |
+|--------|--------------|--------------|-----------|-------------------|---------------------|
+| `CreateWebhookSubscription1.ps1` | `Audit.Exchange` | `func-exchange-<token>` | `eh-exchange` | `exchange-input → exchange-output` | `auditlogs/exchange-json/...` |
+| `CreateWebhookSubscription2.ps1` | `Audit.SharePoint` | `func-sharepoint-<token>` | `eh-sharepoint` | `sharepoint-input → sharepoint-output` | `auditlogs/sharepoint-json/...` |
+| `CreateWebhookSubscription3.ps1` | `DLP.All` | `func-dlp-<token>` | `eh-dlp` | `dlp-input → dlp-output` | `auditlogs/dlp-json/...` |
+| `CreateWebhookSubscription4.ps1` | `Audit.General` | `func-general-<token>` | `eh-general` | `general-input → general-output` | `auditlogs/general-json/...` |
+| `CreateWebhookSubscription5.ps1` | `Audit.AzureActiveDirectory` | `func-azuread-<token>` | `eh-azuread` | `azuread-input → azuread-output` | `auditlogs/azuread-json/...` |
 
-### Entra user snapshot (4th pipeline)
+> All inputs/outputs above live on **one shared** Stream Analytics job
+> (`asa-prism-<token>`, 1 SU) — the streams never mix (separate inputs, outputs
+> and consumer groups), but they share a single job to avoid paying the 1-SU
+> floor per workload.
 
-A **fourth Function App** runs on a **weekly timer** (not a webhook) and pulls **all Microsoft Entra users and their properties** via **Microsoft Graph**, writing a **single blob** that is **overwritten** each run so the file always holds the current, de-duplicated set of users. It does **not** use an Event Hub — it writes directly to the shared data lake.
+### Entra user snapshot (timer pipeline)
+
+A separate **timer-triggered Function App** (`func-entrausers-<token>`) runs on a
+schedule (not a webhook) and pulls **all Microsoft Entra users and their
+properties** via **Microsoft Graph**, writing a **single blob** that is
+**overwritten** each run so the file always holds the current, de-duplicated set
+of users. It does **not** use an Event Hub — it writes directly to the shared data
+lake via **managed identity**.
 
 | Trigger | Source | Function App | Data Lake blob path | Write mode |
 |---------|--------|--------------|---------------------|------------|
-| Timer (weekly) | Microsoft Graph `/users` | `func-prism-entrausers` | `reference/entra/users.json` (single blob) | **Overwrite** (unique snapshot, via connection string) |
+| Timer | Microsoft Graph `/users` | `func-entrausers-<token>` | `reference/entra/users.json` (single blob) | **Overwrite** (managed identity) |
 
 ---
 
@@ -60,21 +84,14 @@ flowchart LR
     end
 
     subgraph RG["Resource Group: rg-prism (single RG, all from scratch)"]
-        subgraph EXCH["Exchange pipeline"]
-            FUNC1["func-prism-exchange"]
-            EH1["eh-exchange (Capture)"]
+        subgraph PIPES["Per-workload pipelines (enabledWorkloads)"]
+            FUNC["func-&lt;workload&gt;<br/>(webhook receiver)"]
+            EH["eh-&lt;workload&gt;"]
         end
-        subgraph SPO["SharePoint pipeline"]
-            FUNC2["func-prism-sharepoint"]
-            EH2["eh-sharepoint (Capture)"]
-        end
-        subgraph DLP["DLP pipeline"]
-            FUNC3["func-prism-dlp"]
-            EH3["eh-dlp (Capture)"]
-        end
-        FUNC4["func-prism-entrausers<br/>(weekly timer)"]
+        ASA["asa-prism (shared Stream Analytics)<br/>1 input + 1 output per workload"]
+        FUNC4["func-entrausers<br/>(timer)"]
         EHNS["Event Hubs Namespace (shared)"]
-        DL["ADLS Gen2 Data Lake (shared)<br/>auditlogs/exchange · /sharepoint · /dlp<br/>reference/entra/users.json"]
+        DL["ADLS Gen2 Data Lake (shared, firewalled)<br/>auditlogs/&lt;workload&gt;-json<br/>reference/entra/users.json"]
         KV["Key Vault"]
         AI["App Insights + Log Analytics"]
     end
@@ -83,21 +100,21 @@ flowchart LR
     GRAPH["Microsoft Graph /users"]
     APP -. app permissions .-> MAPI
     APP -. app permissions .-> GRAPH
-    MAPI -->|Audit.Exchange| FUNC1
-    MAPI -->|Audit.SharePoint| FUNC2
-    MAPI -->|DLP.All| FUNC3
-    FUNC4 -->|weekly pull users| GRAPH
-    FUNC1 --> EH1
-    FUNC2 --> EH2
-    FUNC3 --> EH3
-    EH1 & EH2 & EH3 -. belong to .- EHNS
-    EH1 -->|Capture → exchange/| DL
-    EH2 -->|Capture → sharepoint/| DL
-    EH3 -->|Capture → dlp/| DL
+    MAPI -->|Audit.Exchange · SharePoint · DLP.All<br/>Audit.General · Audit.AzureActiveDirectory| FUNC
+    FUNC4 -->|pull users| GRAPH
+    FUNC -->|managed identity| EH
+    EH -. belongs to .- EHNS
+    EH -->|per-workload input| ASA
+    ASA -->|NDJSON → &lt;workload&gt;-json/| DL
     FUNC4 -->|overwrite users.json| DL
-    FUNC1 & FUNC2 & FUNC3 & FUNC4 -. secrets .-> KV
-    FUNC1 & FUNC2 & FUNC3 & FUNC4 -. telemetry .-> AI
+    FUNC & FUNC4 -. secrets .-> KV
+    FUNC & FUNC4 -. telemetry .-> AI
 ```
+
+> The pipeline block is instantiated **once per entry** in `enabledWorkloads`
+> (`exchange`, `sharepoint`, `dlp`, `general`, `azuread`). Removing an entry
+> removes that workload's Function App, Event Hub, its input/output on the shared
+> Stream Analytics job, and role assignments.
 
 ---
 
@@ -107,13 +124,13 @@ flowchart LR
 
 | # | Step | Component | Notes |
 |---|------|-----------|-------|
-| 0 | **Bootstrap subscriptions** | `createwebhooks/CreateWebhookSubscription{1,2,3}.ps1` | One-time (and on renewal). Each script calls `subscriptions/start` for its content type (`Audit.Exchange`, `Audit.SharePoint`, `DLP.All`), pointing at **its own** Function App webhook URL. |
+| 0 | **Bootstrap subscriptions** | `createwebhooks/CreateWebhookSubscription{1..5}.ps1` | One-time (and on renewal). Each script calls `subscriptions/start` for its content type (`Audit.Exchange`, `Audit.SharePoint`, `DLP.All`, `Audit.General`, `Audit.AzureActiveDirectory`), pointing at **its own** Function App webhook URL. Run only the scripts for the workloads you enabled. |
 | 1 | **Validation handshake** | Per-type Function | On subscription start, M365 sends a `validationtoken`; the Function echoes it back with `200 OK`. |
 | 2 | **Notification received** | M365 → Function | M365 POSTs a JSON array of notifications (each with a `contentUri`) to the matching Function App. |
-| 3 | **Pull content** | Function → Management API | Function acquires a token for `https://manage.office.com/.default` using the **client secret** and GETs each `contentUri`. |
-| 4 | **Forward to Event Hub** | Function → its Event Hub | Records are batched and sent to the content-type's **dedicated** Event Hub using its **connection string**. |
-| 5 | **Capture to Data Lake** | Event Hub → ADLS Gen2 | Each Event Hub's **Capture** writes Avro into its **own blob path** (`auditlogs/{type}/...`) in the **shared** data lake — no extra code. |
-| 6 | **Consume** | Data Lake | Downstream tools read each content-type path independently from the same lake. |
+| 3 | **Pull content** | Function → Management API | Function acquires a token for `https://manage.office.com` using the **client secret** (Key Vault reference) and GETs each `contentUri`. |
+| 4 | **Forward to Event Hub** | Function → its Event Hub | Records are batched and sent to the content-type's **dedicated** Event Hub using **managed identity** (Azure Event Hubs Data Sender; local SAS auth is disabled). |
+| 5 | **Shape to Data Lake** | Stream Analytics → ADLS Gen2 | A **single shared Stream Analytics** job (`asa-prism-<token>`) drains every enabled Event Hub via a dedicated input and writes **line-separated JSON** into each workload's **own blob path** (`auditlogs/<type>-json/...`) in the **shared** data lake via managed identity. |
+| 6 | **Consume** | Data Lake | Power BI (and downstream tools) read each content-type path independently from the same lake. |
 
 ### Entra user snapshot flow (4th pipeline)
 
@@ -124,83 +141,161 @@ flowchart LR
 | C | **Pull all users** | Function → Microsoft Graph | `GET /v1.0/users?$select=...` with **paging** (`@odata.nextLink`) to retrieve every user + selected properties. |
 | D | **Overwrite blob** | Function → ADLS Gen2 | Serializes the full user set and **overwrites** `reference/entra/users.json` (via storage **connection string**) so the blob always holds the current, unique users (no duplicates, no history). |
 
-### Authentication model (as confirmed)
-- **Management API:** Entra **client secret** (the **same** app registration) — token for `manage.office.com`.
+### Authentication model (as implemented)
+- **Management API:** Entra **client secret** (the **same** app registration) — token for `manage.office.com`. The secret is stored in **Key Vault** and read via a Key Vault reference app setting.
 - **Microsoft Graph (Entra users):** the **same** Entra **client secret / app id** — token for `graph.microsoft.com` (`User.Read.All`).
-- **Event Hub:** **connection string** (namespace shared access policy).
-- **Data lake (Entra users blob):** storage account **connection string** (consistent with the rest of the solution).
-- All secrets (client secret, EH connection strings, data lake connection string) are proposed to be stored in **Key Vault** and referenced by the Functions (not in source).
+- **Event Hub:** **managed identity** (Azure Event Hubs Data Sender); namespace-level SAS auth is disabled (`disableLocalAuth`).
+- **Data lake:** **managed identity** (Storage Blob Data Contributor) for both the Stream Analytics job and the Entra-users function; shared-key auth is disabled.
+- Only the Entra **client secret** lives in **Key Vault**; every Azure-to-Azure hop uses managed identity (secretless).
 
-> **One app registration for everything.** All four Function Apps use the **same** Entra app id + client secret — it just needs both Office 365 Management API permissions and Microsoft Graph `User.Read.All` consented.
+> **One app registration for everything.** All Function Apps use the **same** Entra app id + client secret — it just needs both Office 365 Management API permissions and Microsoft Graph `User.Read.All` consented.
 
 ---
 
 ## 4. Azure Resources — single resource group, all from scratch
 
-**Resource Group:** `rg-prism` (one region, e.g. `westeurope`). Everything below is created new. There are **four Function Apps** (three webhook receivers + one weekly Entra-users snapshot) and **three Event Hubs**, but **one shared** data lake, Event Hubs namespace, Key Vault, and monitoring stack.
+**Resource Group:** `rg-prism` (one region, e.g. `westeurope`). Everything below is created new. With all workloads enabled there are **six Function Apps** (five webhook receivers + one Entra-users snapshot) and **five Event Hubs**, but **one shared** Stream Analytics job, data lake, Event Hubs namespace, Key Vault, VNet, and monitoring stack. Counts marked *(per enabled workload)* scale with the `enabledWorkloads` array.
 
 | # | Resource | Type (ARM) | Count | SKU / Tier | Purpose |
 |---|----------|------------|-------|------------|---------|
 | 1 | Resource Group | `Microsoft.Resources/resourceGroups` | 1 | — | Single container for all resources |
-| 2 | Data Lake (ADLS Gen2) | `Microsoft.Storage/storageAccounts` | 1 (**shared**) | Standard_LRS, **HNS enabled** | Capture destination + Entra users snapshot blob |
-| 3 | Event Hubs Namespace | `Microsoft.EventHub/namespaces` | 1 (**shared**) | **Standard** (Capture requires Standard+) | Hosts all three Event Hubs |
-| 4 | Event Hub | `Microsoft.EventHub/namespaces/eventhubs` | **3** (`eh-exchange`, `eh-sharepoint`, `eh-dlp`) | 1–4 partitions, Capture **on** | One stream per content type → its own blob path |
-| 5 | Function App | `Microsoft.Web/sites` (functionapp,linux) | **4** (exchange, sharepoint, dlp, entrausers) | **Flex Consumption (FC1)** | 3 webhook receivers + 1 weekly Entra-users snapshot |
-| 6 | Function Plan | `Microsoft.Web/serverfarms` | **4** | FC1 | One Flex plan per Function App |
-| 7 | Function Storage | `Microsoft.Storage/storageAccounts` | **4** | Standard_LRS | Runtime + deployment package per Function App |
-| 8 | Key Vault | `Microsoft.KeyVault/vaults` | 1 (**shared**) | Standard | Client secret + the three EH connection strings + data lake connection string |
-| 9 | Log Analytics Workspace | `Microsoft.OperationalInsights/workspaces` | 1 (**shared**) | PerGB2018 | Centralized logs |
-| 10 | Application Insights | `Microsoft.Insights/components` | 1 or 4 | — | Function monitoring (shared instance, or one per app) |
-| 11 | Managed Identity (system-assigned) | (on each Function) | 4 | — | Function → Key Vault access (read secrets) |
+| 2 | Data Lake (ADLS Gen2) | `Microsoft.Storage/storageAccounts` | 1 (**shared**) | Standard_LRS, **HNS enabled** | NDJSON audit landing + Entra users snapshot blob |
+| 3 | Event Hubs Namespace | `Microsoft.EventHub/namespaces` | 1 (**shared**) | **Standard** | Hosts all workload Event Hubs |
+| 4 | Event Hub | `Microsoft.EventHub/namespaces/eventhubs` | **1 per enabled workload** | 4 partitions | One stream per content type |
+| 5 | Stream Analytics job | `Microsoft.StreamAnalytics/streamingjobs` | **1 (shared)** | Standard, 1 SU | Multi-input/output job; one input + output folder per workload |
+| 6 | Function App | `Microsoft.Web/sites` (functionapp,linux) | **1 per enabled workload + 1** (entrausers) | **Flex Consumption (FC1)** | Webhook receivers + weekly Entra-users snapshot |
+| 7 | Function Plan | `Microsoft.Web/serverfarms` | **1 per Function App** | FC1 | One Flex plan per Function App |
+| 8 | Function Storage | `Microsoft.Storage/storageAccounts` | **1 per Function App** | Standard_LRS | Runtime + deployment package per Function App |
+| 9 | Key Vault | `Microsoft.KeyVault/vaults` | 1 (**shared**) | Standard | Entra client secret (via private endpoint) |
+| 10 | Virtual Network + Private Endpoints | `Microsoft.Network/*` | 1 (**shared**) | — | Private connectivity for storage, Key Vault, Event Hubs |
+| 11 | Log Analytics Workspace | `Microsoft.OperationalInsights/workspaces` | 1 (**shared**) | PerGB2018 | Centralized logs |
+| 12 | Application Insights | `Microsoft.Insights/components` | **1 per Function App** | — | Function monitoring |
+| 13 | Managed Identity (system-assigned) | (on each Function / ASA job) | per resource | — | Secretless access to Key Vault, Event Hubs, data lake |
 
 > **Outside the resource group (prerequisite, not created by IaC):**
-> - **One shared Entra ID App Registration** (same app id + client secret for all four Function Apps) with both **Office 365 Management API** permissions (`ActivityFeed.Read`, `ActivityFeed.ReadDlp`) **and Microsoft Graph** permission (`User.Read.All`, application) plus admin consent. Created once in the tenant and referenced by client id/secret.
+> - **One shared Entra ID App Registration** (same app id + client secret for all Function Apps) with both **Office 365 Management API** permissions (`ActivityFeed.Read`, `ActivityFeed.ReadDlp`) **and Microsoft Graph** permission (`User.Read.All`, application) plus admin consent. `Audit.General` and `Audit.AzureActiveDirectory` are both covered by `ActivityFeed.Read` — no extra consent needed.
 
-> **Note on Function Storage:** A single shared runtime storage account *can* host all three Function Apps (using distinct content shares), which lowers cost. Three separate accounts give stronger isolation. Defaulting to **3** for full per-pipeline isolation — confirm in section 6.
+> **Note on Function Storage:** each Function App gets its own firewalled runtime
+> storage account, reached over private endpoints via VNet integration, for full
+> per-pipeline isolation.
 
 ---
 
-## 5. Data Lake layout (proposed)
+## 5. Data Lake layout
 
-All three Event Hubs capture into the **same** ADLS Gen2 account but under **separate top-level blob paths**, one per content type:
+The shared Stream Analytics job writes into the **same** ADLS Gen2 account but under
+**separate top-level blob paths**, one per content type. Output is
+**line-separated JSON (NDJSON)**, which Power BI parses directly:
 
 ```
 container: auditlogs/
-  exchange/   {yyyy}/{MM}/{dd}/{HH}/{partition}_{timestamp}.avro   <- eh-exchange Capture
-  sharepoint/ {yyyy}/{MM}/{dd}/{HH}/{partition}_{timestamp}.avro   <- eh-sharepoint Capture
-  dlp/        {yyyy}/{MM}/{dd}/{HH}/{partition}_{timestamp}.avro   <- eh-dlp Capture
+  exchange-json/    ...   <- exchange-output   (Audit.Exchange)
+  sharepoint-json/  ...   <- sharepoint-output (Audit.SharePoint)
+  dlp-json/         ...   <- dlp-output        (DLP.All)
+  general-json/     ...   <- general-output    (Audit.General)
+  azuread-json/     ...   <- azuread-output     (Audit.AzureActiveDirectory)
 
 container: reference/
-  entra/users.json                                                <- weekly snapshot, OVERWRITTEN each run
+  entra/users.json        <- weekly snapshot, OVERWRITTEN each run
 ```
 
-- The three audit streams **append** (immutable, partitioned by date/hour); the Entra users blob is a **single file overwritten weekly** so it always holds the current unique user set.
-- Each Event Hub's **Capture path format** is set so its files land under the matching `exchange/`, `sharepoint/`, or `dlp/` prefix.
-- Partition by date/hour for efficient downstream querying and lifecycle management.
-- Apply **lifecycle management** on the storage account to tier/expire old data (e.g., cool after 90 days, delete after retention period) — rules can differ per prefix. The `reference/entra/` blob is excluded from expiry since it is always the latest snapshot.
+- The audit streams **append** (immutable, partitioned by date — one daily folder `…/<workload>-json/yyyy/MM/dd/`); the Entra users blob is a **single file overwritten weekly** so it always holds the current unique user set.
+- Only the paths for **enabled** workloads are produced.
+- Apply **lifecycle management** on the storage account to tier/expire old data. The `reference/entra/` blob is excluded from expiry since it is always the latest snapshot.
 
 ---
 
-## 6. Open decisions (to confirm before build)
+## 6. Power BI data model
 
-1. **Region** for the resource group (default suggestion: `westeurope`).
-2. **Function runtime storage:** one **shared** account for all three Function Apps (lower cost) vs. **three separate** accounts (full isolation, current default).
-3. **Application Insights:** one **shared** instance vs. **one per Function App**.
-4. **Capture format** — Avro (native) vs. post-processing to Parquet/JSON in the lake.
-5. **Retention** policy on the data lake (per content-type prefix).
-6. **Downstream consumer** of the lake (Fabric / Synapse / Databricks / ADX / SIEM connector).
-7. Keep **connection string** for Event Hub, or switch to **managed identity** later for a secretless design.
+Power BI reads the NDJSON folders (and the Entra users snapshot) directly from the
+data lake. The Power Query (M) definitions live in `PBI-Mquerys/` (one file per
+query, referenced by name). The model is a **star-ish schema**: one **fact per
+workload**, per-workload **child tables** for the array-of-record fields, and a
+single shared **`UsersEvent` dimension**.
+
+### Query tiers
+
+| Tier | Load | Queries |
+|------|------|---------|
+| Parameter | — | `DataLakeAccountName`, `LoadDays` |
+| Helper function | OFF | `fnExpandAllRecords` |
+| Staging (base) | OFF | `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `GeneralStaging`, `AzureAdStaging`, `UsersStaging` |
+| Facts | ON | `ExchangeEvent`, `SharePointEvent`, `DlpEvent`, `GeneralEvent`, `AzureAdEvent`, `UsersEvent` |
+| Children | ON | `ExchangeParameters`, `ExchangeOperationProperties`, `SharePointModifiedProperties`, `DlpEndpointSit`, `DlpExchangeRecipients`, `DlpPolicy`, `DlpRule`, `DlpSensitiveInfo`, `GeneralDLPAction`, `AzureAdExtendedProperties`, `AzureAdModifiedProperties`, `AzureAdActor`, `AzureAdTarget` |
+
+Each `*Staging` query parses its folder once and keeps the raw record; the fact
+query expands scalars + 1:1 records and **drops array-of-record columns**, which
+the child queries re-expand (one row per element, keyed by `EventId`).
+
+### Relationships
+
+All relationships are **one-to-many (1 → \*)**, single cross-filter direction,
+from the `1` side to the child. Build only the ones for workloads you enabled.
+
+| Parent (1) · key | Child (\*) · key |
+|------------------|------------------|
+| `ExchangeEvent[EventId]` | `ExchangeParameters[EventId]` |
+| `ExchangeEvent[EventId]` | `ExchangeOperationProperties[EventId]` |
+| `SharePointEvent[EventId]` | `SharePointModifiedProperties[EventId]` |
+| `DlpEvent[EventId]` | `DlpEndpointSit[EventId]` |
+| `DlpEvent[EventId]` | `DlpExchangeRecipients[EventId]` |
+| `DlpEvent[EventId]` | `DlpPolicy[EventId]` |
+| `DlpPolicy[PolicyKey]` | `DlpRule[PolicyKey]` |
+| `DlpRule[RuleKey]` | `DlpSensitiveInfo[RuleKey]` |
+| `GeneralEvent[EventId]` | `GeneralDLPAction[EventId]` |
+| `AzureAdEvent[EventId]` | `AzureAdExtendedProperties[EventId]` |
+| `AzureAdEvent[EventId]` | `AzureAdModifiedProperties[EventId]` |
+| `AzureAdEvent[EventId]` | `AzureAdActor[EventId]` |
+| `AzureAdEvent[EventId]` | `AzureAdTarget[EventId]` |
+| `UsersEvent[userPrincipalName]` | `ExchangeEvent[UserId]` |
+| `UsersEvent[userPrincipalName]` | `SharePointEvent[UserId]` |
+| `UsersEvent[userPrincipalName]` | `DlpEvent[UserId]` |
+| `UsersEvent[userPrincipalName]` | `GeneralEvent[UserId]` |
+| `UsersEvent[userPrincipalName]` | `AzureAdEvent[UserId]` |
+
+`UsersEvent` is the shared **user dimension**: `userPrincipalName` maps
+one-to-many to each fact's `UserId`, so one user filter slices every workload.
+The workload facts stay independent of one another (linked only through
+`UsersEvent`).
+
+```mermaid
+erDiagram
+    ExchangeEvent ||--o{ ExchangeParameters : "EventId"
+    ExchangeEvent ||--o{ ExchangeOperationProperties : "EventId"
+    SharePointEvent ||--o{ SharePointModifiedProperties : "EventId"
+    DlpEvent ||--o{ DlpEndpointSit : "EventId"
+    DlpEvent ||--o{ DlpExchangeRecipients : "EventId"
+    DlpEvent ||--o{ DlpPolicy : "EventId"
+    DlpPolicy ||--o{ DlpRule : "PolicyKey"
+    DlpRule ||--o{ DlpSensitiveInfo : "RuleKey"
+    GeneralEvent ||--o{ GeneralDLPAction : "EventId"
+    AzureAdEvent ||--o{ AzureAdExtendedProperties : "EventId"
+    AzureAdEvent ||--o{ AzureAdModifiedProperties : "EventId"
+    AzureAdEvent ||--o{ AzureAdActor : "EventId"
+    AzureAdEvent ||--o{ AzureAdTarget : "EventId"
+    UsersEvent ||--o{ ExchangeEvent : "userPrincipalName → UserId"
+    UsersEvent ||--o{ SharePointEvent : "userPrincipalName → UserId"
+    UsersEvent ||--o{ DlpEvent : "userPrincipalName → UserId"
+    UsersEvent ||--o{ GeneralEvent : "userPrincipalName → UserId"
+    UsersEvent ||--o{ AzureAdEvent : "userPrincipalName → UserId"
+```
 
 ---
 
-## 7. Proposed build sequence (next phase — not done yet)
+## 7. Adding or removing a workload
 
-1. Provision the resource group + all resources via **Bicep + `azd`** (single deployment): shared data lake, Event Hubs namespace, Key Vault, monitoring, plus **4 Function Apps** and **3 Event Hubs** with Capture mapped to their blob paths.
-2. Refactor `scriptwebhook.py` into a reusable **Azure Functions v2** app (`function_app.py`, `host.json`), deployed as the **three** webhook Function Apps, each configured (via app settings) for its content type and target Event Hub.
-3. Add the **4th Function App** (`func-prism-entrausers`): a **timer-triggered** function that pages Microsoft Graph `/users` and **overwrites** `reference/entra/users.json` in the data lake.
-4. Move secrets to **Key Vault**; wire app settings (client secret + the three EH connection strings).
-5. Update the three `createwebhooks/*.ps1` scripts so each points at its **own** Function App webhook URL.
-6. Enable **Event Hubs Capture** on each Event Hub to its `auditlogs/{type}/` path in the shared data lake.
-7. Validate each pipeline end-to-end (handshake → notification → blob pull → Event Hub → lake path) and the weekly Entra users snapshot (timer → Graph → overwritten blob).
+The set of deployed pipelines is data-driven. To change it:
 
-> Approve this proposal (and the open decisions in section 6) and I will generate the infrastructure and application code.
+1. Edit `enabledWorkloads` in `infra/main.parameters.json` (valid values:
+   `exchange`, `sharepoint`, `dlp`, `general`, `azuread`).
+2. Re-run `azd up` (or `azd provision`). Removed workloads have their Function
+   App, Event Hub, Stream Analytics job and role assignments torn down.
+3. For a newly added workload, run its `createwebhooks/CreateWebhookSubscription*.ps1`
+   once to start the Office 365 Management API subscription.
+4. In Power BI, add the workload's staging/fact/child queries and relationships
+   (section 6), or omit them for disabled workloads.
+
+To support a brand-new content type end-to-end, add an entry to `allWorkloads`
+in `infra/modules/resources.bicep`, create `src/<service>/` (copy an existing
+webhook function), register the service in `azure.yaml`, add a webhook bootstrap
+script, and add the matching `PBI-Mquerys/` queries.

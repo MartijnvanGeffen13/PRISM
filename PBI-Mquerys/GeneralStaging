@@ -1,8 +1,8 @@
-// SharePointStaging — shared base query (set Enable Load = OFF)
-// Parses the SharePoint NDJSON once, one row per audit record, keeping the raw
+// GeneralStaging — shared base query (set Enable Load = OFF)
+// Parses the Audit.General NDJSON once, one row per audit record, keeping the raw
 // top-level record so each child query can expand only what it needs.
 let
-    Source = AzureStorage.DataLake("https://" & DataLakeAccountName & ".dfs.core.windows.net/auditlogs/sharepoint-json"),
+    Source = AzureStorage.DataLake("https://" & DataLakeAccountName & ".dfs.core.windows.net/auditlogs/general-json"),
     Files  = Table.SelectRows(Source, each [Attributes]?[Hidden]? <> true),
     Cutoff = Date.AddDays(Date.From(DateTime.LocalNow()), - LoadDays),
     Recent = Table.SelectRows(Files, each

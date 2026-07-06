@@ -1,6 +1,7 @@
 # PRISM — Purview Reporting & Insights System for Metadata
 
-PRISM ingests Microsoft 365 audit data (Exchange, SharePoint, DLP) and a weekly
+PRISM ingests Microsoft 365 audit data (Exchange, SharePoint, DLP, General, and
+Azure Active Directory) and a weekly
 Entra users snapshot into an Azure Data Lake for Power BI reporting. It is
 deployed as a **self-contained, deploy-your-own-instance** template: every
 organization provisions its own isolated stack in its own subscription.
@@ -9,9 +10,12 @@ organization provisions its own isolated stack in its own subscription.
 
 ## Architecture
 
-Four Azure Function Apps land data into three Event Hubs, which capture into a
-single firewalled Data Lake (Gen2). Stream Analytics jobs shape the data; secrets
-are stored in Key Vault and read via managed identity. See
+Azure Function Apps land data into per-workload Event Hubs, which are drained by
+Stream Analytics jobs into a single firewalled Data Lake (Gen2). Which audit
+workloads deploy is controlled by the `enabledWorkloads` parameter
+(`infra/main.parameters.json`) — each entry provisions its own Function App,
+Event Hub, Stream Analytics job, and role assignments. Secrets are stored in Key
+Vault and read via managed identity. See
 [docs/solution-proposal.md](docs/solution-proposal.md) for the full design and
 [docs/cost-proposal.md](docs/cost-proposal.md) for cost estimates.
 
@@ -61,14 +65,17 @@ start the Office 365 Management API subscriptions (see below).
 ## Start the audit subscriptions (`createwebhooks/`)
 
 The Office 365 Management API only pushes audit content once a subscription is
-started for each content type. Run the three scripts in `createwebhooks/` **once**
-after `azd up` (and again if a subscription is ever stopped):
+started for each content type. Run the scripts in `createwebhooks/` **once**
+after `azd up` (and again if a subscription is ever stopped). Run only the
+scripts for the workloads you enabled in `enabledWorkloads`:
 
 | Script | Content type | Webhook env var |
 |--------|--------------|-----------------|
 | `CreateWebhookSubscription1.ps1` | `Audit.Exchange` | `EXCHANGE_WEBHOOK_URL` |
 | `CreateWebhookSubscription2.ps1` | `Audit.SharePoint` | `SHAREPOINT_WEBHOOK_URL` |
 | `CreateWebhookSubscription3.ps1` | `DLP.All` | `DLP_WEBHOOK_URL` |
+| `CreateWebhookSubscription4.ps1` | `Audit.General` | `GENERAL_WEBHOOK_URL` |
+| `CreateWebhookSubscription5.ps1` | `Audit.AzureActiveDirectory` | `AZUREAD_WEBHOOK_URL` |
 
 The scripts read **all** values from environment variables — nothing is hard-coded.
 Get each Function App's webhook URL (including its `?code=` function key) from the
@@ -85,15 +92,45 @@ $env:PURVIEW_CLIENT_SECRET = "<your-app-secret>"      # never committed
 $env:EXCHANGE_WEBHOOK_URL   = "https://<exchange-func>.azurewebsites.net/api/webhook?code=<key>"
 $env:SHAREPOINT_WEBHOOK_URL = "https://<sharepoint-func>.azurewebsites.net/api/webhook?code=<key>"
 $env:DLP_WEBHOOK_URL        = "https://<dlp-func>.azurewebsites.net/api/webhook?code=<key>"
+$env:GENERAL_WEBHOOK_URL    = "https://<general-func>.azurewebsites.net/api/webhook?code=<key>"
+$env:AZUREAD_WEBHOOK_URL    = "https://<azuread-func>.azurewebsites.net/api/webhook?code=<key>"
 
 # Run each once — a 200 with a "status: enabled" subscription confirms success
 ./createwebhooks/CreateWebhookSubscription1.ps1
 ./createwebhooks/CreateWebhookSubscription2.ps1
 ./createwebhooks/CreateWebhookSubscription3.ps1
+./createwebhooks/CreateWebhookSubscription4.ps1
+./createwebhooks/CreateWebhookSubscription5.ps1
 ```
 
 > The Function App keys in `*_WEBHOOK_URL` are secrets — set them only as
 > environment variables for the current session; never commit them.
+
+## Start the Stream Analytics job
+
+The **single, shared** Stream Analytics job (`asa-prism-<token>`) is created in a
+**Stopped** state — ARM/Bicep (and `azd up`) provision it but **do not start it
+automatically**. Start it **once** after deployment so it begins draining every
+enabled Event Hub (one input/output per workload) into the Data Lake. This is a
+one-time action; the job stays running across future `azd up` / `azd deploy` runs.
+
+**Option A — Azure portal (GUI):** open the Stream Analytics job `asa-prism-…` →
+**Overview** → **Start** → set **Job output start time** to **Now** → **Start**.
+
+**Option B — Azure CLI:** start every Stream Analytics job in the resource group
+(requires the `stream-analytics` extension — `az extension add -n stream-analytics`
+if prompted):
+
+```pwsh
+$rg = "rg-PRISM"   # your resource group (rg-<azd env name>)
+foreach ($job in (az stream-analytics job list -g $rg --query "[].name" -o tsv)) {
+  Write-Host "Starting $job ..."
+  az stream-analytics job start -g $rg --job-name $job --output-start-mode JobStartTime
+}
+```
+
+> Check state at any time:
+> `az stream-analytics job list -g rg-PRISM --query "[].{name:name,state:jobState}" -o table`
 
 ## Power BI reporting
 
@@ -127,12 +164,17 @@ If a `PRISM.pbit` template is published with the release, this is the fastest pa
 
 ### 3. Option B — import the M queries manually
 
-1. **Create the parameter first.** In **Home → Transform data** (Power Query
+1. **Create the parameters first.** In **Home → Transform data** (Power Query
    Editor), **New Source → Blank Query → Advanced Editor**, paste the contents of
    `PBI-Mquerys/DataLakeAccountName`, and rename the query to exactly
    `DataLakeAccountName`. Power BI recognises the `IsParameterQuery` annotation and
    treats it as a parameter. Set its **Current Value** to your storage account name.
-   (Alternatively use **Manage Parameters → New**, Type = Text.)
+   (Alternatively use **Manage Parameters → New**, Type = Text.) Do the same with
+   `PBI-Mquerys/LoadDays` (rename to exactly `LoadDays`, Type = Number) — it sets the
+   rolling window of audit history to load, in days (default **360**). Every audit
+   `*Staging` query reads only day-partition folders newer than today minus `LoadDays`,
+   so refreshes scan a bounded window instead of the whole lake. (`UsersStaging` is a
+   single overwritten snapshot and ignores it.)
 2. **Add each remaining query.** For every other file in `PBI-Mquerys/`:
    **New Source → Blank Query → Advanced Editor**, paste the file's contents, and
    **rename the query to match the file name exactly** (e.g. `DlpStaging`,
@@ -147,11 +189,14 @@ If a `PRISM.pbit` template is published with the release, this is the fastest pa
 | Query / group | Enable load | Why |
 |---------------|-------------|-----|
 | `DataLakeAccountName` | — (parameter) | Connection parameter, not a table. |
+| `LoadDays` | — (parameter) | Rolling window (days) of history to load; default 360. Not a table. |
 | `fnExpandAllRecords` | **OFF** | Helper function. |
-| `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `UsersStaging` | **OFF** | Shared base queries; parsed once, consumed by children. |
+| `ExchangeStaging`, `SharePointStaging`, `DlpStaging`, `GeneralStaging`, `AzureAdStaging`, `UsersStaging` | **OFF** | Shared base queries; parsed once, consumed by children. |
 | `ExchangeEvent`, `ExchangeParameters`, `ExchangeOperationProperties` | **ON** | Exchange fact + children. |
 | `SharePointEvent`, `SharePointModifiedProperties` | **ON** | SharePoint fact + child. |
 | `DlpEvent`, `DlpEndpointSit`, `DlpExchangeRecipients`, `DlpPolicy`, `DlpRule`, `DlpSensitiveInfo` | **ON** | DLP fact + children. |
+| `GeneralEvent`, `GeneralDLPAction` | **ON** | Audit.General fact + child (`GeneralDLPAction` parses the JSON-encoded `NewValue` DLP-action detail). |
+| `AzureAdEvent`, `AzureAdExtendedProperties`, `AzureAdModifiedProperties`, `AzureAdActor`, `AzureAdTarget` | **ON** | Audit.AzureActiveDirectory fact + children. |
 | `UsersEvent` | **ON** | Entra users fact. |
 
 ### 4. Relationships
@@ -170,16 +215,24 @@ to the child, and **active**.
 | `DlpEvent[EventId]` | `DlpPolicy[EventId]` | 1 → \* |
 | `DlpPolicy[PolicyKey]` | `DlpRule[PolicyKey]` | 1 → \* |
 | `DlpRule[RuleKey]` | `DlpSensitiveInfo[RuleKey]` | 1 → \* |
+| `GeneralEvent[EventId]` | `GeneralDLPAction[EventId]` | 1 → \* |
+| `AzureAdEvent[EventId]` | `AzureAdExtendedProperties[EventId]` | 1 → \* |
+| `AzureAdEvent[EventId]` | `AzureAdModifiedProperties[EventId]` | 1 → \* |
+| `AzureAdEvent[EventId]` | `AzureAdActor[EventId]` | 1 → \* |
+| `AzureAdEvent[EventId]` | `AzureAdTarget[EventId]` | 1 → \* |
 | `UsersEvent[userPrincipalName]` | `ExchangeEvent[UserId]` | 1 → \* |
 | `UsersEvent[userPrincipalName]` | `SharePointEvent[UserId]` | 1 → \* |
 | `UsersEvent[userPrincipalName]` | `DlpEvent[UserId]` | 1 → \* |
+| `UsersEvent[userPrincipalName]` | `GeneralEvent[UserId]` | 1 → \* |
+| `UsersEvent[userPrincipalName]` | `AzureAdEvent[UserId]` | 1 → \* |
 
 `UsersEvent` is a shared **user dimension**: its `userPrincipalName` maps
 one-to-many to each workload fact's `UserId`, so a single user filter slices
-Exchange, SharePoint, and DLP together. The three workload facts
-(`ExchangeEvent`, `SharePointEvent`, `DlpEvent`) remain independent of one another
-(no direct cross-workload relationship) — they are linked only through the shared
-`UsersEvent` dimension.
+Exchange, SharePoint, DLP, General, and Azure AD together. The workload facts
+(`ExchangeEvent`, `SharePointEvent`, `DlpEvent`, `GeneralEvent`, `AzureAdEvent`)
+remain independent of one another (no direct cross-workload relationship) — they
+are linked only through the shared `UsersEvent` dimension. Only build the
+relationships for the workloads you actually enabled in `enabledWorkloads`.
 
 ```mermaid
 erDiagram
@@ -191,10 +244,66 @@ erDiagram
     DlpEvent ||--o{ DlpPolicy : "EventId"
     DlpPolicy ||--o{ DlpRule : "PolicyKey"
     DlpRule ||--o{ DlpSensitiveInfo : "RuleKey"
+    GeneralEvent ||--o{ GeneralDLPAction : "EventId"
+    AzureAdEvent ||--o{ AzureAdExtendedProperties : "EventId"
+    AzureAdEvent ||--o{ AzureAdModifiedProperties : "EventId"
+    AzureAdEvent ||--o{ AzureAdActor : "EventId"
+    AzureAdEvent ||--o{ AzureAdTarget : "EventId"
     UsersEvent ||--o{ ExchangeEvent : "userPrincipalName → UserId"
     UsersEvent ||--o{ SharePointEvent : "userPrincipalName → UserId"
     UsersEvent ||--o{ DlpEvent : "userPrincipalName → UserId"
+    UsersEvent ||--o{ GeneralEvent : "userPrincipalName → UserId"
+    UsersEvent ||--o{ AzureAdEvent : "userPrincipalName → UserId"
 ```
+
+
+### 5. (Optional) Incremental refresh — faster refreshes (Power BI Premium / PPU / Fabric)
+
+By default every refresh re-reads the **entire** data lake, which gets slower as
+history grows ("waiting for datalake storage"). Incremental refresh makes Power BI
+re-read only the **most recent** daily partitions and leave older data untouched,
+so refresh time stays flat. It requires **Power BI Premium, Premium-Per-User (PPU),
+or Fabric** and the dataset **published to the service**.
+
+**Prerequisite (query side).** The `*Staging` queries must filter their files on two
+datetime parameters named exactly `RangeStart` and `RangeEnd`, derived from the
+`yyyy/MM/dd` folder path (this pairs with the daily ASA output). This is **not wired
+in the shipped queries yet** — ask a maintainer to enable it (or see the staging
+pattern in the project notes) before configuring the policy below. Power BI's
+incremental refresh only works when the parameters are consumed by a folded/pruning
+filter, so history outside `[RangeStart, RangeEnd)` is never downloaded.
+
+**Configure the policy (per fact table):**
+
+1. Publish the report to a **Premium/PPU/Fabric** workspace (incremental refresh is
+   defined in Desktop but only executes in the service).
+2. In **Power BI Desktop**, confirm the `RangeStart` and `RangeEnd` parameters exist
+   (**Home → Transform data → Manage Parameters**), both **Date/Time**.
+3. In the **Data** pane, **right-click a fact table** (e.g. `GeneralEvent`,
+   `ExchangeEvent`, `DlpEvent`, `SharePointEvent`, `AzureAdEvent`, `UsersEvent`) →
+   **Incremental refresh**.
+4. Toggle **Incrementally refresh this table** to **On**.
+5. Set **Archive data starting** *N* years/months before refresh date (how much
+   history to keep, e.g. **Store rows from the past 2 years**).
+6. Set **Incrementally refresh data starting** *M* days before refresh date (the
+   window actually re-read each run, e.g. **Refresh rows from the past 7 days**).
+   Smaller = faster refresh.
+7. (Optional) Enable **Detect data changes** or **Only refresh complete days** if you
+   want finer control; leave **Get the latest data in real time (DirectQuery)** off
+   for this import model.
+8. **Apply**, then **Publish** to the Premium/PPU/Fabric workspace and run a refresh.
+   The **first** service refresh is a full load (it builds the partitions); every
+   refresh after only re-reads the last *M* days.
+
+**Repeat steps 3–8 for each enabled fact table.** The per-workload child tables
+(`GeneralDLPAction`, `Dlp*`, `AzureAd*`, …) read the same filtered staging, so they
+inherit the pruning automatically — you do **not** configure a policy on them.
+
+> **Already shipped:** the `*Staging` queries implement a manual rolling window via the
+> `LoadDays` parameter (default **360** days), so even on plain Pro/Desktop each refresh
+> only scans the last `LoadDays` of day-partition folders (a big speedup; the report then
+> holds a rolling window of history rather than all of it). Incremental refresh (above)
+> is the Premium/PPU/Fabric upgrade that additionally skips re-reading days already loaded.
 
 
 ## Security notes

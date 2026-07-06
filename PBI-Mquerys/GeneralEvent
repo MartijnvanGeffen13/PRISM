@@ -1,10 +1,10 @@
-// DlpEvent — fact table (one row per audit record). LOAD = ON.
-// Expands scalars + 1:1 metadata records; collapses simple scalar lists
-// (To/CC/BCC/labels) to delimited text; drops array-of-record columns
-// (PolicyDetails, SensitiveInfoTypeData, ...) which become child tables.
-// Relationship: DlpEvent[EventId] 1 --- * each Dlp* child[EventId].
+// GeneralEvent — fact table (one row per Audit.General audit record). LOAD = ON.
+// Expands scalars + 1:1 metadata records; collapses simple scalar lists to
+// delimited text; drops array-of-record columns (ExtendedProperties,
+// ModifiedProperties, ...) which become child tables.
+// Relationship: GeneralEvent[EventId] 1 --- * each General* child[EventId].
 let
-    Source       = Table.Buffer(DlpStaging),
+    Source       = Table.Buffer(GeneralStaging),
     AllTopFields = List.Distinct(List.Combine(List.Transform(Source[Record], each Record.FieldNames(_)))),
     Expanded     = Table.ExpandRecordColumn(Source, "Record", AllTopFields),
     Flattened    = fnExpandAllRecords(Expanded),

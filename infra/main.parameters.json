@@ -19,6 +19,15 @@
     },
     "deployerIpAddress": {
       "value": "${DEPLOYER_IP_ADDRESS=}"
+    },
+    "enabledWorkloads": {
+      "value": [
+        "exchange",
+        "sharepoint",
+        "dlp",
+        "general",
+        "azuread"
+      ]
     }
   }
 }

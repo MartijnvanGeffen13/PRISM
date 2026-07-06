@@ -1,0 +1,7 @@
+// LoadDays — Power Query parameter (Number).
+// Rolling window of audit history to load, in days. Each audit *Staging query only
+// reads day-partition folders (yyyy/MM/dd) newer than today minus this value, so a
+// refresh scans a bounded window instead of the entire data lake. Increase for more
+// history (slower refresh); decrease for faster refresh. Does NOT apply to
+// UsersStaging (a single, always-current overwritten snapshot blob).
+360 meta [IsParameterQuery=true, Type="Number", IsParameterQueryRequired=true]

@@ -1,0 +1,14 @@
+// AzureAdActor — child: one row per Actor identity (ID / Type). LOAD = ON.
+// Azure AD Base schema: the acting security principal(s), each with an ID and a
+// numeric Type (0=Claim, 1=Name, 2=OtherName, 3=PUID, 4=SID, 5=UPN, 6=objectId, ...).
+// Relationship: AzureAdEvent[EventId] 1 --- * AzureAdActor[EventId].
+let
+    Source = Table.Buffer(AzureAdStaging),
+    Add    = Table.AddColumn(Source, "Actor", each Record.FieldOrDefault([Record], "Actor")),
+    Sel    = Table.SelectColumns(Add, {"EventId", "Actor"}),
+    NoNull = Table.SelectRows(Sel, each [Actor] <> null and not List.IsEmpty([Actor])),
+    ToRows = Table.ExpandListColumn(NoNull, "Actor"),
+    fields = List.Distinct(List.Combine(List.Transform(List.Select(ToRows[Actor], each _ <> null), each Record.FieldNames(_)))),
+    Result = Table.ExpandRecordColumn(ToRows, "Actor", fields)
+in
+    Result

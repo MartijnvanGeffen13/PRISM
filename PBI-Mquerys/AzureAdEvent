@@ -1,10 +1,10 @@
-// DlpEvent — fact table (one row per audit record). LOAD = ON.
-// Expands scalars + 1:1 metadata records; collapses simple scalar lists
-// (To/CC/BCC/labels) to delimited text; drops array-of-record columns
-// (PolicyDetails, SensitiveInfoTypeData, ...) which become child tables.
-// Relationship: DlpEvent[EventId] 1 --- * each Dlp* child[EventId].
+// AzureAdEvent — fact table (one row per Audit.AzureActiveDirectory record). LOAD = ON.
+// Expands scalars + 1:1 metadata records; collapses simple scalar lists to
+// delimited text; drops array-of-record columns (ExtendedProperties,
+// ModifiedProperties, Actor, Target, ...) which become child tables.
+// Relationship: AzureAdEvent[EventId] 1 --- * each AzureAd* child[EventId].
 let
-    Source       = Table.Buffer(DlpStaging),
+    Source       = Table.Buffer(AzureAdStaging),
     AllTopFields = List.Distinct(List.Combine(List.Transform(Source[Record], each Record.FieldNames(_)))),
     Expanded     = Table.ExpandRecordColumn(Source, "Record", AllTopFields),
     Flattened    = fnExpandAllRecords(Expanded),

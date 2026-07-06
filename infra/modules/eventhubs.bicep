@@ -18,17 +18,18 @@ param eventHubDnsZoneId string
 @description('Optional public IP address allowed through the firewall (e.g. the deployer machine). Empty disables the rule.')
 param deployerIpAddress string = ''
 
+@description('Event Hub names to create in the namespace (one per enabled workload).')
+param eventHubNames array = [
+  'eh-exchange'
+  'eh-sharepoint'
+  'eh-dlp'
+]
+
 var ipRules = empty(deployerIpAddress) ? [] : [
   {
     ipMask: deployerIpAddress
     action: 'Allow'
   }
-]
-
-var hubs = [
-  { name: 'eh-exchange', prefix: 'exchange' }
-  { name: 'eh-sharepoint', prefix: 'sharepoint' }
-  { name: 'eh-dlp', prefix: 'dlp' }
 ]
 
 resource namespace 'Microsoft.EventHub/namespaces@2024-01-01' = {
@@ -67,9 +68,9 @@ resource networkRuleSet 'Microsoft.EventHub/namespaces/networkRuleSets@2024-01-0
 
 // Avro Capture is disabled. Each hub is drained by a dedicated Stream Analytics
 // job that writes line-separated JSON to the data lake instead.
-resource eventHub 'Microsoft.EventHub/namespaces/eventhubs@2024-01-01' = [for h in hubs: {
+resource eventHub 'Microsoft.EventHub/namespaces/eventhubs@2024-01-01' = [for name in eventHubNames: {
   parent: namespace
-  name: h.name
+  name: name
   properties: {
     partitionCount: 4
     messageRetentionInDays: 1

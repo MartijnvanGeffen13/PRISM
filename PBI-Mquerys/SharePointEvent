@@ -4,7 +4,7 @@
 // text; drops array-of-record columns (ModifiedProperties, ...) -> child tables.
 // Relationship: SharePointEvent[EventId] 1 --- * each SharePoint* child[EventId].
 let
-    Source       = SharePointStaging,
+    Source       = Table.Buffer(SharePointStaging),
     AllTopFields = List.Distinct(List.Combine(List.Transform(Source[Record], each Record.FieldNames(_)))),
     Expanded     = Table.ExpandRecordColumn(Source, "Record", AllTopFields),
     Flattened    = fnExpandAllRecords(Expanded),

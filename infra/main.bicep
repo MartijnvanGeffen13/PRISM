@@ -27,7 +27,14 @@ param dataLakeAllowedIpAddresses array = []
 
 @description('Entra user/group object ids granted Storage Blob Data Contributor on the data lake (e.g. report authors using Storage Explorer / Power BI Desktop). Empty by default.')
 param dataLakeUserPrincipalIds array = []
-
+@description('Which audit APIs to deploy. Each entry provisions the full stack for that workload: Function App, Event Hub, Stream Analytics job and role assignments. Valid values: exchange, sharepoint, dlp, general, azuread.')
+param enabledWorkloads array = [
+  'exchange'
+  'sharepoint'
+  'dlp'
+  'general'
+  'azuread'
+]
 var resourceToken = take(uniqueString(subscription().id, environmentName, location), 6)
 var tags = { 'azd-env-name': environmentName }
 
@@ -50,6 +57,7 @@ module resources './modules/resources.bicep' = {
     deployerIpAddress: deployerIpAddress
     dataLakeAllowedIpAddresses: dataLakeAllowedIpAddresses
     dataLakeUserPrincipalIds: dataLakeUserPrincipalIds
+    enabledWorkloads: enabledWorkloads
   }
 }
 
@@ -61,5 +69,7 @@ output EVENT_HUB_NAMESPACE string = resources.outputs.eventHubNamespaceName
 output EXCHANGE_FUNCTION_URL string = resources.outputs.exchangeFunctionUrl
 output SHAREPOINT_FUNCTION_URL string = resources.outputs.sharepointFunctionUrl
 output DLP_FUNCTION_URL string = resources.outputs.dlpFunctionUrl
+output GENERAL_FUNCTION_URL string = resources.outputs.generalFunctionUrl
+output AZUREAD_FUNCTION_URL string = resources.outputs.azureadFunctionUrl
 output ENTRAUSERS_FUNCTION_NAME string = resources.outputs.entrausersFunctionName
 output STREAM_ANALYTICS_JOB_NAMES array = resources.outputs.streamAnalyticsJobNames

@@ -1,0 +1,14 @@
+// AzureAdTarget — child: one row per Target identity (ID / Type). LOAD = ON.
+// Azure AD Base schema: the security principal(s) the action was performed on,
+// each with an ID and a numeric Type (same enumeration as AzureAdActor).
+// Relationship: AzureAdEvent[EventId] 1 --- * AzureAdTarget[EventId].
+let
+    Source = Table.Buffer(AzureAdStaging),
+    Add    = Table.AddColumn(Source, "Target", each Record.FieldOrDefault([Record], "Target")),
+    Sel    = Table.SelectColumns(Add, {"EventId", "Target"}),
+    NoNull = Table.SelectRows(Sel, each [Target] <> null and not List.IsEmpty([Target])),
+    ToRows = Table.ExpandListColumn(NoNull, "Target"),
+    fields = List.Distinct(List.Combine(List.Transform(List.Select(ToRows[Target], each _ <> null), each Record.FieldNames(_)))),
+    Result = Table.ExpandRecordColumn(ToRows, "Target", fields)
+in
+    Result
