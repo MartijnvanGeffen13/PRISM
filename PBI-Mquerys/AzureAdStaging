@@ -24,6 +24,11 @@ let
     ToRows = Table.ExpandListColumn(Kept, "Records"),
     NoNull = Table.SelectRows(ToRows, each [Records] <> null),
     WithId = Table.AddColumn(NoNull, "EventId", each Record.FieldOrDefault([Records], "Id"), type text),
-    Result = Table.RenameColumns(WithId, {{"Name", "SourceFile"}, {"Records", "Record"}})
+    Renamed = Table.RenameColumns(WithId, {{"Name", "SourceFile"}, {"Records", "Record"}}),
+    // The same audit record Id can be written to more than one NDJSON file / day
+    // partition (retries or overlapping delivery). Keep one row per EventId so it stays
+    // unique on the "one" side of the AzureAdEvent 1 --- * AzureAd* child relationships.
+    HasId  = Table.SelectRows(Renamed, each [EventId] <> null and [EventId] <> ""),
+    Result = Table.Distinct(HasId, {"EventId"})
 in
     Result
