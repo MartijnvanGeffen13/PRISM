@@ -113,9 +113,18 @@ The `enabledWorkloads` parameter (`infra/main.parameters.json`) controls which
 audit APIs deploy. Each entry provisions a **complete, isolated pipeline** —
 Function App, Event Hub, runtime storage, 3 private endpoints, App Insights, and
 role assignments — **plus one input/output on the shared Stream Analytics job**.
-Removing an entry and re-running `azd provision` **tears that pipeline down and
-stops its charges**; adding one back re-creates it. The `entrausers` snapshot
-function is **always deployed** and is not part of this toggle.
+Adding an entry and re-running `azd provision` **creates that pipeline and starts
+its charges**.
+
+> **Note — removing a workload does not auto-delete it.** `azd provision` runs an
+> **incremental** ARM/Bicep deployment, so simply dropping an entry from
+> `enabledWorkloads` leaves the previously-created resources in place and they
+> **keep accruing cost**. To actually stop the charges you must remove those
+> resources explicitly — e.g. delete the workload's resources in the portal/CLI,
+> or tear down the whole environment with `azd down`.
+
+The `entrausers` snapshot function is **always deployed** and is not part of this
+toggle.
 
 ### Cost model
 

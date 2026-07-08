@@ -288,8 +288,12 @@ The set of deployed pipelines is data-driven. To change it:
 
 1. Edit `enabledWorkloads` in `infra/main.parameters.json` (valid values:
    `exchange`, `sharepoint`, `dlp`, `general`, `azuread`).
-2. Re-run `azd up` (or `azd provision`). Removed workloads have their Function
-   App, Event Hub, Stream Analytics job and role assignments torn down.
+2. Re-run `azd up` (or `azd provision`). This is an **incremental** deployment:
+   newly added workloads are created, but workloads you removed from
+   `enabledWorkloads` are **not** deleted automatically — their Function App,
+   Event Hub, Stream Analytics input/output and role assignments remain and keep
+   incurring cost until you remove them explicitly (delete the resources via the
+   portal/CLI, or run `azd down` to tear down the whole environment).
 3. For a newly added workload, run its `createwebhooks/CreateWebhookSubscription*.ps1`
    once to start the Office 365 Management API subscription.
 4. In Power BI, add the workload's staging/fact/child queries and relationships

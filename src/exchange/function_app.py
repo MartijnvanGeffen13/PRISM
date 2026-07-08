@@ -14,6 +14,7 @@ All configuration comes from environment variables / app settings:
 import json
 import logging
 import os
+from urllib.parse import urlparse
 
 import azure.functions as func
 import requests
@@ -23,7 +24,20 @@ from azure.identity import DefaultAzureCredential
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 _MANAGEMENT_RESOURCE = "https://manage.office.com"
+_MANAGEMENT_HOST = "manage.office.com"
 _HTTP_TIMEOUT = 30
+
+
+def _is_trusted_content_uri(content_uri: str) -> bool:
+    """Only allow HTTPS content URIs served by the Management Activity API host."""
+    try:
+        parsed = urlparse(content_uri)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and (
+        host == _MANAGEMENT_HOST or host.endswith("." + _MANAGEMENT_HOST)
+    )
 
 
 def _get_management_token() -> str:
@@ -58,11 +72,18 @@ def _forward_to_event_hub(records: list) -> int:
             try:
                 batch.add(data)
             except ValueError:
-                # Batch full — flush and start a new one.
-                producer.send_batch(batch)
-                sent += len(batch)
-                batch = producer.create_batch()
-                batch.add(data)
+                # The event did not fit the current batch. Flush a non-empty
+                # batch and retry on a fresh one; if it still doesn't fit, the
+                # single event is too large — log and skip it.
+                if len(batch) > 0:
+                    producer.send_batch(batch)
+                    sent += len(batch)
+                    batch = producer.create_batch()
+                try:
+                    batch.add(data)
+                except ValueError:
+                    logging.warning("Skipping event too large for an Event Hub batch")
+                    continue
         if len(batch) > 0:
             producer.send_batch(batch)
             sent += len(batch)
@@ -101,9 +122,9 @@ def webhook(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         token = _get_management_token()
-    except requests.RequestException as exc:
+    except requests.RequestException:
         logging.exception("Failed to acquire management token")
-        return func.HttpResponse(f"Auth error: {exc}", status_code=502)
+        return func.HttpResponse("Failed to acquire management token.", status_code=502)
 
     headers = {"Authorization": f"Bearer {token}"}
     total_sent = 0
@@ -111,6 +132,9 @@ def webhook(req: func.HttpRequest) -> func.HttpResponse:
     for notification in notifications:
         content_uri = notification.get("contentUri")
         if not content_uri:
+            continue
+        if not _is_trusted_content_uri(content_uri):
+            logging.warning("Skipping notification with untrusted contentUri: %s", content_uri)
             continue
         try:
             content_resp = requests.get(content_uri, headers=headers, timeout=_HTTP_TIMEOUT)
