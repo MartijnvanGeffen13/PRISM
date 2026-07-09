@@ -1,3 +1,6 @@
+## Let me know in the discussions if you like this project , if you have improvement ideas, or just say hello if you deployed PRISM in your environment and what you experience is with the tool
+
+
 # PRISM — Purview Reporting & Insights System for Metadata
 
 PRISM ingests Microsoft 365 audit data (Exchange, SharePoint, DLP, General, and
