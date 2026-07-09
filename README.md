@@ -11,7 +11,8 @@ organization provisions its own isolated stack in its own subscription.
 ## Architecture
 
 Azure Function Apps land data into per-workload Event Hubs, which are drained by
-Stream Analytics jobs into a single firewalled Data Lake (Gen2). Which audit
+Stream Analytics jobs into a single Data Lake (Gen2) whose public access is
+governed by a **Network Security Perimeter (NSP)**. Which audit
 workloads deploy is controlled by the `enabledWorkloads` parameter
 (`infra/main.parameters.json`) — each entry provisions its own Function App,
 Event Hub, Stream Analytics job, and role assignments. Secrets are stored in Key
@@ -55,12 +56,41 @@ azd env set ENTRA_CLIENT_SECRET  <your-app-secret>      # never committed
 # Optional: allow your current public IP through resource firewalls to deploy
 azd env set DEPLOYER_IP_ADDRESS  <your-public-ip>
 
+# Optional: allow report-author / Power BI Desktop public IPs inbound to the
+# Data Lake through its Network Security Perimeter (JSON array; /32 assumed when
+# no CIDR is given). Empty by default. Applied by the azd postprovision hook
+# after provisioning, so re-run `azd provision` (or `azd up`) after changing it.
+azd env set DATA_LAKE_ALLOWED_IPS '["203.0.113.10/32"]'
+
 # 4. Provision infrastructure and deploy the functions
 azd up
 ```
 
 After deployment, run the webhook bootstrap scripts (`createwebhooks/`) once to
 start the Office 365 Management API subscriptions (see below).
+
+### Choose which audit workloads to deploy (`enabledWorkloads`)
+
+The `enabledWorkloads` array in [`infra/main.parameters.json`](infra/main.parameters.json)
+controls which audit APIs are provisioned. Valid values: `exchange`,
+`sharepoint`, `dlp`, `general`, `azuread` (all five are enabled by default).
+Each entry provisions a **complete, isolated pipeline** — Function App, Event
+Hub, runtime storage + private endpoints, App Insights, role assignments — plus
+one input/output on the **shared** Stream Analytics job. The `entrausers`
+snapshot function is **always** deployed and is not part of this list.
+
+To deploy a subset, edit the array before `azd up` / `azd provision`, e.g. only
+Exchange and DLP:
+
+```json
+"enabledWorkloads": { "value": ["exchange", "dlp"] }
+```
+
+> **Removing an entry does not delete already-created resources.** `azd provision`
+> runs an **incremental** deployment, so pipelines you drop from the array stay in
+> place and keep accruing cost. To actually remove them, delete those resources
+> explicitly (portal/CLI) or tear the environment down with `azd down`. See
+> [docs/cost-proposal.md](docs/cost-proposal.md) §5 for the per-workload cost impact.
 
 ## Start the audit subscriptions (`createwebhooks/`)
 
@@ -143,8 +173,8 @@ reference each other **by name**, so names must match the file names exactly.
 - **Power BI Desktop** (latest).
 - The report author's identity (or the gateway) has **Storage Blob Data Reader**
   (or Contributor) on the Data Lake.
-- If the Data Lake firewall is enabled, the author's public IP is in
-  `dataLakeAllowedIpAddresses`.
+- The author's public IP is allowed inbound through the Data Lake's Network
+  Security Perimeter via `DATA_LAKE_ALLOWED_IPS` (applied by the postprovision hook).
 - Your deployment's storage account name (the `DATA_LAKE_ACCOUNT_NAME` output),
   e.g. `dlprismab12cd`.
 
@@ -156,7 +186,8 @@ If a `PRISM.pbit` template is published with the release, this is the fastest pa
 2. When prompted, enter the **`DataLakeAccountName`** parameter (storage account
    name only — no `https://`, no suffix).
 3. Sign in to the storage source with an **Organizational account** when asked.
-4. Make sure that you can connect to the Datalake Biceps deploy only 1 allowed IP. See deploy Variables.
+4. Make sure your public IP is allowed inbound through the Data Lake's Network
+   Security Perimeter (`DATA_LAKE_ALLOWED_IPS`). See deploy variables.
 5. **Refresh**. All queries, load settings, and relationships come pre-configured.
 
 > See [Build the `.pbit` template](#5-build-the-pbit-template-maintainers) for how a
@@ -311,9 +342,16 @@ inherit the pruning automatically — you do **not** configure a policy on them.
 - **Never commit secrets.** `.env`, `local.settings.json`, and `.azure/**` are
   git-ignored. Provide the client secret only via `azd env set`.
 - Secrets live in **Key Vault**; Function Apps read them via **managed identity**.
-- The Data Lake uses a **public endpoint with an IP allow-list**
-  (`dataLakeAllowedIpAddresses`), empty by default. Only add the specific IPs of
-  report authors / gateways that need read access — never open it broadly.
+- The Data Lake's public network access is **secured by a Network Security
+  Perimeter** (`publicNetworkAccess: 'SecuredByPerimeter'`). Inbound public
+  access is denied by default; the perimeter allows only the report-author /
+  gateway IPs from `DATA_LAKE_ALLOWED_IPS` (empty by default — never open it
+  broadly) plus in-subscription Azure services (the Stream Analytics job). The
+  report-author IP rule is applied by the **azd postprovision hook**
+  ([`scripts/set-datalake-nsp-ip-rule.ps1`](scripts/set-datalake-nsp-ip-rule.ps1)),
+  because the NSP provider cannot write an IP rule and a subscription rule in the
+  same ARM deployment. The `entrausers` function reaches the lake over its
+  **private endpoint**, which the perimeter always permits without a rule.
 - No tenant-specific defaults are baked into the templates; all identity values
   are supplied at deploy time.
 
@@ -325,6 +363,8 @@ inherit the pruning automatically — you do **not** configure a policy on them.
 | `ENTRA_TENANT_ID` | Yes | Tenant id of the shared app registration. |
 | `ENTRA_CLIENT_ID` | Yes | Client id of the shared app registration. |
 | `ENTRA_CLIENT_SECRET` | Yes | App client secret (deploy time only). |
-| `DEPLOYER_IP_ADDRESS` | No | Public IP allowed through firewalls to deploy from outside the VNet. |
-| `dataLakeAllowedIpAddresses` | No | Bicep param — IPs allowed to read the Data Lake. Empty by default. |
+| `enabledWorkloads` | No | Bicep param (array in `infra/main.parameters.json`) selecting which audit APIs deploy: `exchange`, `sharepoint`, `dlp`, `general`, `azuread`. All five by default. |
+| `DEPLOYER_IP_ADDRESS` | No | Public IP allowed through firewalls to deploy from outside the VNet. Also added to the Data Lake perimeter inbound rule. |
+| `DATA_LAKE_ALLOWED_IPS` | No | JSON array of report-author / gateway public IPs allowed inbound to the Data Lake via its Network Security Perimeter. Applied by the postprovision hook (`scripts/set-datalake-nsp-ip-rule.ps1`). Empty by default. |
+| `dataLakeUserPrincipalIds` | No | Bicep param — Entra object ids granted Data Lake read. Empty by default. |
 | `dataLakeUserPrincipalIds` | No | Bicep param — Entra object ids granted Data Lake read. Empty by default. |

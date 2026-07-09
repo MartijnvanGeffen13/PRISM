@@ -40,8 +40,12 @@ own Event Hub**, and gets **its own input/output on the shared Stream Analytics
 job**. All workloads land data in the
 **same data lake storage account**, but each writes to a **separate blob path**,
 keeping the streams fully isolated end-to-end. The set of deployed workloads is
-driven by the `enabledWorkloads` array — add or remove an entry to turn an entire
-pipeline on or off.
+driven by the `enabledWorkloads` array in `infra/main.parameters.json` (valid
+values: `exchange`, `sharepoint`, `dlp`, `general`, `azuread`) — add an entry to
+provision that pipeline. Note that `azd provision` is **incremental**, so
+*removing* an entry does not delete the already-created resources; tear them down
+explicitly or with `azd down`. The `entrausers` snapshot is always deployed and
+is not part of this list.
 
 | Script | Content type | Function App | Event Hub | ASA input → output | Data Lake blob path |
 |--------|--------------|--------------|-----------|-------------------|---------------------|
@@ -91,7 +95,7 @@ flowchart LR
         ASA["asa-prism (shared Stream Analytics)<br/>1 input + 1 output per workload"]
         FUNC4["func-entrausers<br/>(timer)"]
         EHNS["Event Hubs Namespace (shared)"]
-        DL["ADLS Gen2 Data Lake (shared, firewalled)<br/>auditlogs/&lt;workload&gt;-json<br/>reference/entra/users.json"]
+        DL["ADLS Gen2 Data Lake (shared, NSP-secured)<br/>auditlogs/&lt;workload&gt;-json<br/>reference/entra/users.json"]
         KV["Key Vault"]
         AI["App Insights + Log Analytics"]
     end
@@ -159,7 +163,7 @@ flowchart LR
 | # | Resource | Type (ARM) | Count | SKU / Tier | Purpose |
 |---|----------|------------|-------|------------|---------|
 | 1 | Resource Group | `Microsoft.Resources/resourceGroups` | 1 | — | Single container for all resources |
-| 2 | Data Lake (ADLS Gen2) | `Microsoft.Storage/storageAccounts` | 1 (**shared**) | Standard_LRS, **HNS enabled** | NDJSON audit landing + Entra users snapshot blob |
+| 2 | Data Lake (ADLS Gen2) | `Microsoft.Storage/storageAccounts` | 1 (**shared**) | Standard_LRS, **HNS enabled** | NDJSON audit landing + Entra users snapshot blob. Public access **secured by Network Security Perimeter**. |
 | 3 | Event Hubs Namespace | `Microsoft.EventHub/namespaces` | 1 (**shared**) | **Standard** | Hosts all workload Event Hubs |
 | 4 | Event Hub | `Microsoft.EventHub/namespaces/eventhubs` | **1 per enabled workload** | 4 partitions | One stream per content type |
 | 5 | Stream Analytics job | `Microsoft.StreamAnalytics/streamingjobs` | **1 (shared)** | Standard, 1 SU | Multi-input/output job; one input + output folder per workload |
@@ -168,6 +172,7 @@ flowchart LR
 | 8 | Function Storage | `Microsoft.Storage/storageAccounts` | **1 per Function App** | Standard_LRS | Runtime + deployment package per Function App |
 | 9 | Key Vault | `Microsoft.KeyVault/vaults` | 1 (**shared**) | Standard | Entra client secret (via private endpoint) |
 | 10 | Virtual Network + Private Endpoints | `Microsoft.Network/*` | 1 (**shared**) | — | Private connectivity for storage, Key Vault, Event Hubs |
+| 10a | Network Security Perimeter | `Microsoft.Network/networkSecurityPerimeters` | 1 (**shared**) | — | Governs the Data Lake's public access: denies all inbound except allowed report-author IPs and in-subscription services (Stream Analytics); private endpoint traffic always allowed |
 | 11 | Log Analytics Workspace | `Microsoft.OperationalInsights/workspaces` | 1 (**shared**) | PerGB2018 | Centralized logs |
 | 12 | Application Insights | `Microsoft.Insights/components` | **1 per Function App** | — | Function monitoring |
 | 13 | Managed Identity (system-assigned) | (on each Function / ASA job) | per resource | — | Secretless access to Key Vault, Event Hubs, data lake |

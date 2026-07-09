@@ -67,7 +67,7 @@ Derived from `infra/modules/*.bicep` with all five workloads enabled:
 |----------|--------:|-------|
 | **Low** | **~$330** | Lean logging (sampling on), data lake new/small |
 | **Expected** | **~$383** | All 5 workloads, single shared ASA job |
-| **High** | **~$470** | Verbose telemetry (30+ GB logs), Event Hubs auto-inflate to 2 TU, ASA bumped to 3 SU |
+| **High** | **~$445** | Verbose telemetry (30+ GB logs) and Event Hubs auto-inflate to 2 TU under bursty delivery. The shared Stream Analytics job stays at **1 SU** — 1M/day is a tiny fraction of one SU, so it never needs scaling up. |
 
 > **~$0.013 per 1,000 records** (≈ $13 per million) at this volume with all five workloads on. See §5 to scale cost down by disabling workloads.
 
@@ -181,4 +181,5 @@ Ranked by savings. Each is optional and trades cost against isolation/architectu
 - The single Stream Analytics job is **created stopped**; charges begin only once you **start** it (see the README). A stopped job costs nothing.
 - Flex Consumption has no always-ready instances configured (scales to zero), so function cost is execution-driven and modest.
 - Prices are **list / PAYG**; EA, CSP, or savings commitments reduce them. Reservations don't apply to most of these meters.
+- The Data Lake's public access is governed by a **Network Security Perimeter**; the perimeter, its profile, and access rules incur **no Azure charge**.
 - Excludes egress/bandwidth, Microsoft 365 / Graph licensing, and the Entra app registration (no Azure cost).

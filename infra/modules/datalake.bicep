@@ -21,22 +21,6 @@ param dfsDnsZoneId string
 @description('Resource ids of the Stream Analytics jobs allowed through the firewall (resource instance rules).')
 param streamAnalyticsJobIds array = []
 
-@description('Optional public IP address allowed through the firewall (e.g. the deployer machine). Empty disables the rule.')
-param deployerIpAddress string = ''
-
-@description('Additional client public IP addresses allowed to read the data lake (e.g. Power BI gateway / report authors).')
-param allowedIpAddresses array = []
-
-// Deduplicate the deployer IP and client IPs (storage requires unique ipRules).
-var deployerIps = empty(deployerIpAddress) ? [] : [
-  deployerIpAddress
-]
-
-var ipRules = [for ip in union(deployerIps, allowedIpAddresses): {
-  value: ip
-  action: 'Allow'
-}]
-
 resource dataLake 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: name
   location: location
@@ -53,16 +37,21 @@ resource dataLake 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     // entrausers function and Stream Analytics jobs authenticate with Azure AD.
     allowSharedKeyAccess: false
     supportsHttpsTrafficOnly: true
-    // Public endpoint is firewalled to deny everything except:
-    //  - the entrausers function (over its private endpoint / VNet)
-    //  - the Stream Analytics jobs (resource instance rules below, MSI auth)
-    //  - the optional deployer IP. Standard Stream Analytics cannot join a VNet,
-    //    so the account stays Enabled with default-deny rather than Disabled.
-    publicNetworkAccess: 'Enabled'
+    // Public network access is governed by the associated Network Security
+    // Perimeter (see networkSecurityPerimeter.bicep). The perimeter denies all
+    // public traffic by default and allows only:
+    //  - the entrausers function (over its private endpoint / VNet — private
+    //    endpoint traffic is always allowed without an explicit rule)
+    //  - report authors / Power BI Desktop (inbound IP rule on the perimeter)
+    //  - in-subscription Azure services such as the Stream Analytics job
+    //    (inbound subscription rule on the perimeter; MSI/Azure AD auth).
+    // The Stream Analytics resource instance rules are kept as a defence-in-depth
+    // fallback for MSI access; they have no effect while SecuredByPerimeter.
+    publicNetworkAccess: 'SecuredByPerimeter'
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Deny'
-      ipRules: ipRules
+      ipRules: []
       virtualNetworkRules: []
       resourceAccessRules: [for jobId in streamAnalyticsJobIds: {
         tenantId: tenant().tenantId

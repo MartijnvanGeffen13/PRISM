@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "16159724976217596187"
+      "templateHash": "11193478646887975646"
     }
   },
   "parameters": {
@@ -47,13 +47,6 @@
       "defaultValue": "",
       "metadata": {
         "description": "Optional public IP address allowed through resource firewalls so you can deploy from outside the VNet (e.g. your dev machine). Supply via: azd env set DEPLOYER_IP_ADDRESS <ip>. Leave empty for deny-all."
-      }
-    },
-    "dataLakeAllowedIpAddresses": {
-      "type": "array",
-      "defaultValue": [],
-      "metadata": {
-        "description": "Client public IP addresses allowed to read the data lake over its public endpoint (e.g. Power BI report authors / gateway). Empty by default; supply via: azd env set DATA_LAKE_ALLOWED_IPS."
       }
     },
     "dataLakeUserPrincipalIds": {
@@ -123,9 +116,6 @@
           "deployerIpAddress": {
             "value": "[parameters('deployerIpAddress')]"
           },
-          "dataLakeAllowedIpAddresses": {
-            "value": "[parameters('dataLakeAllowedIpAddresses')]"
-          },
           "dataLakeUserPrincipalIds": {
             "value": "[parameters('dataLakeUserPrincipalIds')]"
           },
@@ -140,7 +130,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "2295838639842700808"
+              "templateHash": "1275672154557881710"
             }
           },
           "parameters": {
@@ -185,13 +175,6 @@
               "defaultValue": "",
               "metadata": {
                 "description": "Optional public IP address allowed through resource firewalls (e.g. the deployer machine). Empty disables the rule."
-              }
-            },
-            "dataLakeAllowedIpAddresses": {
-              "type": "array",
-              "defaultValue": [],
-              "metadata": {
-                "description": "Client public IP addresses allowed to read the data lake (e.g. Power BI report authors / gateway)."
               }
             },
             "dataLakeUserPrincipalIds": {
@@ -848,12 +831,6 @@
                   },
                   "streamAnalyticsJobIds": {
                     "value": "[variables('streamAnalyticsJobIds')]"
-                  },
-                  "deployerIpAddress": {
-                    "value": "[parameters('deployerIpAddress')]"
-                  },
-                  "allowedIpAddresses": {
-                    "value": "[parameters('dataLakeAllowedIpAddresses')]"
                   }
                 },
                 "template": {
@@ -863,7 +840,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "6839355423207831965"
+                      "templateHash": "929889912302797154"
                     }
                   },
                   "parameters": {
@@ -909,34 +886,7 @@
                       "metadata": {
                         "description": "Resource ids of the Stream Analytics jobs allowed through the firewall (resource instance rules)."
                       }
-                    },
-                    "deployerIpAddress": {
-                      "type": "string",
-                      "defaultValue": "",
-                      "metadata": {
-                        "description": "Optional public IP address allowed through the firewall (e.g. the deployer machine). Empty disables the rule."
-                      }
-                    },
-                    "allowedIpAddresses": {
-                      "type": "array",
-                      "defaultValue": [],
-                      "metadata": {
-                        "description": "Additional client public IP addresses allowed to read the data lake (e.g. Power BI gateway / report authors)."
-                      }
                     }
-                  },
-                  "variables": {
-                    "copy": [
-                      {
-                        "name": "ipRules",
-                        "count": "[length(union(variables('deployerIps'), parameters('allowedIpAddresses')))]",
-                        "input": {
-                          "value": "[union(variables('deployerIps'), parameters('allowedIpAddresses'))[copyIndex('ipRules')]]",
-                          "action": "Allow"
-                        }
-                      }
-                    ],
-                    "deployerIps": "[if(empty(parameters('deployerIpAddress')), createArray(), createArray(parameters('deployerIpAddress')))]"
                   },
                   "resources": [
                     {
@@ -955,7 +905,7 @@
                         "allowBlobPublicAccess": false,
                         "allowSharedKeyAccess": false,
                         "supportsHttpsTrafficOnly": true,
-                        "publicNetworkAccess": "Enabled",
+                        "publicNetworkAccess": "SecuredByPerimeter",
                         "networkAcls": {
                           "copy": [
                             {
@@ -969,7 +919,7 @@
                           ],
                           "bypass": "AzureServices",
                           "defaultAction": "Deny",
-                          "ipRules": "[variables('ipRules')]",
+                          "ipRules": [],
                           "virtualNetworkRules": []
                         }
                       }
@@ -1305,6 +1255,155 @@
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Resources/deployments', 'network')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "datalake-perimeter",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('nsp-prism-{0}', parameters('resourceToken'))]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "dataLakeId": {
+                    "value": "[reference(resourceId('Microsoft.Resources/deployments', 'datalake'), '2025-04-01').outputs.id.value]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.44.1.10279",
+                      "templateHash": "11191441038406985701"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Network Security Perimeter name."
+                      }
+                    },
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Location for the perimeter and its profile/rules."
+                      }
+                    },
+                    "tags": {
+                      "type": "object",
+                      "metadata": {
+                        "description": "Tags applied to the perimeter."
+                      }
+                    },
+                    "dataLakeId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Resource id of the Data Lake storage account to associate with the perimeter."
+                      }
+                    },
+                    "allowedSubscriptionId": {
+                      "type": "string",
+                      "defaultValue": "[subscription().subscriptionId]",
+                      "metadata": {
+                        "description": "Subscription id whose in-subscription Azure services (e.g. the Stream Analytics job authenticating with its managed identity) are allowed inbound to the data lake. Defaults to the current subscription."
+                      }
+                    },
+                    "accessMode": {
+                      "type": "string",
+                      "defaultValue": "Enforced",
+                      "allowedValues": [
+                        "Learning",
+                        "Enforced",
+                        "Audit"
+                      ],
+                      "metadata": {
+                        "description": "Association access mode. Enforced denies all public traffic except the rules below. Use Learning first to observe traffic without blocking, then switch to Enforced."
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Network/networkSecurityPerimeters",
+                      "apiVersion": "2023-08-01-preview",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]"
+                    },
+                    {
+                      "type": "Microsoft.Network/networkSecurityPerimeters/profiles",
+                      "apiVersion": "2023-08-01-preview",
+                      "name": "[format('{0}/{1}', parameters('name'), 'prism-profile')]",
+                      "location": "[parameters('location')]",
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Network/networkSecurityPerimeters', parameters('name'))]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Network/networkSecurityPerimeters/profiles/accessRules",
+                      "apiVersion": "2023-08-01-preview",
+                      "name": "[format('{0}/{1}/{2}', parameters('name'), 'prism-profile', 'allow-inbound-subscription')]",
+                      "location": "[parameters('location')]",
+                      "properties": {
+                        "direction": "Inbound",
+                        "subscriptions": [
+                          {
+                            "id": "[format('/subscriptions/{0}', parameters('allowedSubscriptionId'))]"
+                          }
+                        ]
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Network/networkSecurityPerimeters/profiles', parameters('name'), 'prism-profile')]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Network/networkSecurityPerimeters/resourceAssociations",
+                      "apiVersion": "2023-08-01-preview",
+                      "name": "[format('{0}/{1}', parameters('name'), 'assoc-datalake')]",
+                      "location": "[parameters('location')]",
+                      "properties": {
+                        "accessMode": "[parameters('accessMode')]",
+                        "privateLinkResource": {
+                          "id": "[parameters('dataLakeId')]"
+                        },
+                        "profile": {
+                          "id": "[resourceId('Microsoft.Network/networkSecurityPerimeters/profiles', parameters('name'), 'prism-profile')]"
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Network/networkSecurityPerimeters', parameters('name'))]",
+                        "[resourceId('Microsoft.Network/networkSecurityPerimeters/profiles', parameters('name'), 'prism-profile')]",
+                        "[resourceId('Microsoft.Network/networkSecurityPerimeters/profiles/accessRules', parameters('name'), 'prism-profile', 'allow-inbound-subscription')]"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "perimeterId": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Network/networkSecurityPerimeters', parameters('name'))]"
+                    },
+                    "perimeterName": {
+                      "type": "string",
+                      "value": "[parameters('name')]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Resources/deployments', 'datalake')]"
               ]
             },
             {
@@ -3451,7 +3550,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "7844511212159237780"
+                      "templateHash": "14132946730936741673"
                     }
                   },
                   "parameters": {

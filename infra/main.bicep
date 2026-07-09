@@ -22,9 +22,6 @@ param entraClientSecret string
 @description('Optional public IP address allowed through resource firewalls so you can deploy from outside the VNet (e.g. your dev machine). Supply via: azd env set DEPLOYER_IP_ADDRESS <ip>. Leave empty for deny-all.')
 param deployerIpAddress string = ''
 
-@description('Client public IP addresses allowed to read the data lake over its public endpoint (e.g. Power BI report authors / gateway). Empty by default; supply via: azd env set DATA_LAKE_ALLOWED_IPS.')
-param dataLakeAllowedIpAddresses array = []
-
 @description('Entra user/group object ids granted Storage Blob Data Contributor on the data lake (e.g. report authors using Storage Explorer / Power BI Desktop). Empty by default.')
 param dataLakeUserPrincipalIds array = []
 @description('Which audit APIs to deploy. Each entry provisions the full stack for that workload: Function App, Event Hub, Stream Analytics job and role assignments. Valid values: exchange, sharepoint, dlp, general, azuread.')
@@ -55,7 +52,6 @@ module resources './modules/resources.bicep' = {
     clientId: clientId
     entraClientSecret: entraClientSecret
     deployerIpAddress: deployerIpAddress
-    dataLakeAllowedIpAddresses: dataLakeAllowedIpAddresses
     dataLakeUserPrincipalIds: dataLakeUserPrincipalIds
     enabledWorkloads: enabledWorkloads
   }

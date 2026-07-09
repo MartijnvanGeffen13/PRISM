@@ -28,3 +28,20 @@ services:
     project: ./src/entrausers
     language: python
     host: function
+
+# After infrastructure is provisioned, apply the Data Lake NSP inbound IP rule
+# from DATA_LAKE_ALLOWED_IPS. This runs outside the ARM deployment because the
+# NSP provider cannot write an IP rule and a subscription rule in the same
+# deployment (see scripts/set-datalake-nsp-ip-rule.ps1).
+hooks:
+  postprovision:
+    windows:
+      shell: pwsh
+      run: ./scripts/set-datalake-nsp-ip-rule.ps1
+      continueOnError: false
+      interactive: false
+    posix:
+      shell: pwsh
+      run: ./scripts/set-datalake-nsp-ip-rule.ps1
+      continueOnError: false
+      interactive: false

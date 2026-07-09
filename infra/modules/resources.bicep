@@ -22,9 +22,6 @@ param entraClientSecret string
 @description('Optional public IP address allowed through resource firewalls (e.g. the deployer machine). Empty disables the rule.')
 param deployerIpAddress string = ''
 
-@description('Client public IP addresses allowed to read the data lake (e.g. Power BI report authors / gateway).')
-param dataLakeAllowedIpAddresses array = []
-
 @description('Entra user/group object ids granted Storage Blob Data Contributor on the data lake (e.g. report authors using Storage Explorer / Power BI Desktop).')
 param dataLakeUserPrincipalIds array = []
 
@@ -107,8 +104,21 @@ module dataLake './datalake.bicep' = {
     blobDnsZoneId: network.outputs.blobDnsZoneId
     dfsDnsZoneId: network.outputs.dfsDnsZoneId
     streamAnalyticsJobIds: streamAnalyticsJobIds
-    deployerIpAddress: deployerIpAddress
-    allowedIpAddresses: dataLakeAllowedIpAddresses
+  }
+}
+
+// Secure the data lake's public network access behind a Network Security
+// Perimeter instead of a storage-firewall IP allow list. The perimeter, its
+// profile, the subscription rule (Stream Analytics) and the association are
+// created here; the report-author inbound IP rule is applied by the azd
+// postprovision hook (see scripts/set-datalake-nsp-ip-rule.ps1).
+module dataLakePerimeter './networkSecurityPerimeter.bicep' = {
+  name: 'datalake-perimeter'
+  params: {
+    name: 'nsp-prism-${resourceToken}'
+    location: location
+    tags: tags
+    dataLakeId: dataLake.outputs.id
   }
 }
 
