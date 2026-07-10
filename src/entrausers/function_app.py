@@ -1,5 +1,5 @@
 """
-Weekly Microsoft Entra user snapshot.
+Daily Microsoft Entra user snapshot.
 
 Runs on a timer, pages every user from Microsoft Graph, and OVERWRITES a single
 blob in the data lake so the file always holds the current, de-duplicated set of

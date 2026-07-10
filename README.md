@@ -4,7 +4,7 @@
 # PRISM — Purview Reporting & Insights System for Metadata
 
 PRISM ingests Microsoft 365 audit data (Exchange, SharePoint, DLP, General, and
-Azure Active Directory) and a weekly
+Azure Active Directory) and a daily
 Entra users snapshot into an Azure Data Lake for Power BI reporting. It is
 deployed as a **self-contained, deploy-your-own-instance** template: every
 organization provisions its own isolated stack in its own subscription.
