@@ -33,6 +33,7 @@ Detailed guidance lives in the [`docs/`](docs/) folder:
 | [Power BI reporting guide](docs/powerbi.md) | Importing the M queries (or the `.pbit` template), model relationships, and incremental refresh. |
 | [Solution proposal](docs/solution-proposal.md) | End-to-end architecture and the Azure resources created. |
 | [Cost proposal](docs/cost-proposal.md) | Estimated monthly Azure cost and per-workload cost impact. |
+| [PRISM vs. MPARR](docs/prism-vs-mparr.md) | How PRISM compares to Microsoft's MPARR collector on cost, implementation, maintenance, and flexibility. |
 | [Todo](docs/Todo.md) | Outstanding documentation and roadmap items. |
 
 ## Quick start
