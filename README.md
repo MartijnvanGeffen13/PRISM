@@ -72,6 +72,43 @@ reporting model over the Data Lake. The
 See the guide for prerequisites, both options in detail, the model relationships,
 and incremental refresh.
 
+### Sample report gallery
+
+The screenshots below are pages from the included `PRISM.pbit` sample report,
+built entirely on the audit data PRISM lands in the Data Lake. Every page slices
+the same model by **office location, job title, department, and user**, and drills
+down to the raw audit records in a detail table — showing how the collected
+Microsoft 365 signals become interactive, filterable insights.
+
+#### Data Loss Prevention (DLP)
+
+Which **policies triggered**, the **sensitive information types** detected, and the
+**workloads** involved (Endpoint, Exchange, Teams, OneDrive) — with per-user and
+per-department breakdowns and the underlying DLP events.
+
+![PRISM DLP report page](docs/images/DLP.png)
+
+#### Sensitivity labels (Microsoft Information Protection)
+
+**Labels added, removed, or changed** on files over time, broken down by label
+name, device, and workload — tracking sensitivity-label activity across the tenant.
+
+![PRISM sensitivity labels report page](docs/images/MIP.png)
+
+#### Auto-labeling & label changes
+
+**Sensitivity-label operations** (applied, changed, change-failed) by file type and
+over time, drilling into the exact SharePoint/OneDrive documents affected.
+
+![PRISM auto-labeling report page](docs/images/MIPAutolabel.png)
+
+#### eDiscovery
+
+**eDiscovery case activity** — case viewed, updated, settings changed, review-set
+operations — trended by day with per-case and per-user detail.
+
+![PRISM eDiscovery report page](docs/images/ediscovery.png)
+
 ## Security notes
 
 - **Never commit secrets.** `.env`, `local.settings.json`, and `.azure/**` are
