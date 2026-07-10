@@ -2,8 +2,46 @@
 
 > **Scope:** Estimated monthly Azure cost for the architecture currently defined in `infra/` with **all five audit workloads enabled** (`exchange, sharepoint, dlp, general, azuread`) plus the `entrausers` snapshot, at a sustained volume of **1 million audit records per day** (~30M/month) spread across the streams.
 > **Region:** West Europe · **Currency:** USD · **Pricing:** Pay-as-you-go list prices, retrieved live from the Azure Retail Prices API (June 2026). Taxes and any EA/CSP discounts excluded.
-> Estimates assume average record size **~1.5 KB JSON** → **~1.5 GB/day ingress (~45–50 GB/month)**.
+> **Record size is measured, not assumed.** Counting **every record in all 198 files** currently in the live data lake (`dlprismc63wet/auditlogs`) gives a weighted-average record size of **~1.48 KB JSON** (see §0) — so **1M records/day ≈ 1.37 GB/day ≈ ~41 GB/month**. This confirms the original ~1.5 KB planning assumption.
 > **Which workloads deploy is configurable** via `enabledWorkloads` (`infra/main.parameters.json`). A **single, shared Stream Analytics job** drains all enabled workloads (one input/output per workload), so adding a workload no longer adds a whole streaming job — see §5.
+
+---
+
+## 0. Empirical basis — measured from every file in the live data lake
+
+Record size is not assumed — it is computed by downloading and counting **every record in all 198 blobs** in the deployed data lake account **`dlprismc63wet`**, container **`auditlogs`**, over the window **2026-07-02 → 2026-07-09 (8 days)**. Records land as newline-delimited JSON written by the shared Stream Analytics job, one folder per workload.
+
+| Workload folder | Files | Data | Records | Measured avg record size |
+|-----------------|------:|-----:|--------:|-------------------------:|
+| `general-json` | 113 | 7.46 MB | 6,231 | **~1,255 B** |
+| `sharepoint-json` | 13 | 2.75 MB | 1,268 | **~2,274 B** |
+| `exchange-json` | 24 | 0.44 MB | 187 | **~2,477 B** |
+| `azuread-json` | 40 | 0.35 MB | 149 | **~2,490 B** |
+| `dlp-json` | 8 | 0.09 MB | 46 | **~2,107 B** |
+| **Total** | **198** | **11.63 MB** | **7,881** | **~1,476 B (~1.48 KB weighted)** |
+
+- **Measured throughput in the sample window:** 7,881 records over 8 days ≈ **~985 records/day (~1.4 MB/day)** — a light real-world test load.
+- **Weighted-average record size: ~1,476 bytes (~1.48 KB)** — driven by the high-volume `general` stream (~1.25 KB), with the other workloads running ~2.1–2.5 KB.
+
+> **Per file vs. per record — why it's ~1.5 KB, not ~57 KB.** A naive `11.63 MB ÷ 198 files ≈ 57 KB` is the average size *per file*, not per record. Each blob is **newline-delimited JSON** and bundles many audit records (one JSON object per line):
+>
+> - Bytes per **file**: `11,634,450 ÷ 198 ≈ 57 KB`
+> - Records per **file**: `7,881 ÷ 198 ≈ 40 records/file`
+> - Bytes per **record**: `11,634,450 ÷ 7,881 ≈ 1,476 B ≈ 1.48 KB`  *(equivalently `57 KB/file ÷ 40 records/file ≈ 1.4 KB`)*
+>
+> Cost at 1M records/**day** scales on the **record** size, because Event Hubs events, Stream Analytics throughput, and data-lake growth all track record count, not file count.
+
+**Extrapolation to the 1,000,000 records/day target** (linear on the measured per-record size, ~1,015× the observed volume):
+
+| Metric | Measured (all 198 files) | Extrapolated @ 1M/day |
+|--------|-------------------------:|----------------------:|
+| Records/day | ~985 | **1,000,000** |
+| Avg record size | ~1.48 KB | ~1.48 KB (unchanged) |
+| Data/day | ~1.4 MB | **~1.37 GB** |
+| Data/month (30 d) | ~42 MB | **~41 GB** |
+| Avg events/sec | ~0.011 | **~11.6** |
+
+> The exact ~1.48 KB record size lands right on the original ~1.5 KB assumption, so the monthly volume (~41 GB) and the cost figures below are confirmed rather than revised. Because the pipeline is **fixed-infrastructure dominated** (§4) and 11.6 events/s is a tiny fraction of one Event Hubs TU / Stream Analytics SU, data volume has almost no effect on the total.
 
 ---
 
@@ -54,7 +92,7 @@ Derived from `infra/modules/*.bicep` with all five workloads enabled:
 | **Log Analytics + App Insights** | ~18–22 GB ingested net of free tier (6 App Insights) | **$52.00** |
 | **Function Apps (6, Flex)** | ~execution GB-s + invocations | **$28.00** |
 | **Event Hubs (1 TU)** | $0.03 × 730 + 30M × $0.028/1M | **$22.70** |
-| **Data Lake (ADLS Gen2)** | ~50 GB growth + ASA write transactions | **$13.00** |
+| **Data Lake (ADLS Gen2)** | **~41 GB/mo growth** (measured 1.48 KB/rec) + ASA write transactions | **$13.00** |
 | **Function host storage (6)** | small footprint + transactions | **$12.00** |
 | **Private DNS zones (6)** | 6 × $0.50 + queries | **$4.00** |
 | **Key Vault** | reference resolution operations | **$1.00** |
@@ -67,7 +105,7 @@ Derived from `infra/modules/*.bicep` with all five workloads enabled:
 |----------|--------:|-------|
 | **Low** | **~$330** | Lean logging (sampling on), data lake new/small |
 | **Expected** | **~$383** | All 5 workloads, single shared ASA job |
-| **High** | **~$445** | Verbose telemetry (30+ GB logs) and Event Hubs auto-inflate to 2 TU under bursty delivery. The shared Stream Analytics job stays at **1 SU** — 1M/day is a tiny fraction of one SU, so it never needs scaling up. |
+| **High** | **~$445** | Verbose telemetry (30+ GB logs) and Event Hubs auto-inflate to 2 TU under bursty delivery. The shared Stream Analytics job stays at **1 SU** — 1M/day (~11.6 events/s) is a tiny fraction of one SU, so it never needs scaling up. |
 
 > **~$0.013 per 1,000 records** (≈ $13 per million) at this volume with all five workloads on. See §5 to scale cost down by disabling workloads.
 
@@ -92,7 +130,7 @@ Dropping ingestion by **100×** barely moves the bill, because the cost is fixed
 
 ## 4. Key insight: cost is dominated by *fixed* infrastructure, not volume
 
-At 1M records/day the actual data path is tiny — **~11.6 events/second average**, a small fraction of one Event Hubs throughput unit and well under one Stream Analytics streaming unit. The bill is driven almost entirely by **always-on, fixed-price resources**:
+At 1M records/day the actual data path is tiny — **~11.6 events/second average** (measured record size ~1.48 KB → ~17 KB/s), a small fraction of one Event Hubs throughput unit and well under one Stream Analytics streaming unit. The bill is driven almost entirely by **always-on, fixed-price resources**:
 
 ```
 Private Endpoints $162  ┃██████████████████████████████  42%
@@ -175,7 +213,7 @@ Ranked by savings. Each is optional and trades cost against isolation/architectu
 
 ## 7. Assumptions & caveats
 
-- Average record **1.5 KB**; DLP/Exchange records can run larger — scale storage/logging linearly if so.
+- Average record **~1.48 KB (measured across all 198 files)** in the live lake (§0); per-workload it ranges from ~1.25 KB (`general`, the high-volume stream) to ~2.5 KB (Entra ID / Exchange). 1M records/day ≈ **~41 GB/month** — scale storage/logging linearly if the workload mix shifts toward the larger record types.
 - Bursty M365 delivery is within **1 TU**; if peaks exceed ~1000 events/s, enable **auto-inflate** (small added TU-hours).
 - `entrausers` timer runs **daily at 02:00 UTC** (`0 0 2 * * *`) — modest Graph calls, function executions, and one lake write per day.
 - The single Stream Analytics job is **created stopped**; charges begin only once you **start** it (see the README). A stopped job costs nothing.

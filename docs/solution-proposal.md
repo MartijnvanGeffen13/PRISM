@@ -8,22 +8,6 @@
 
 ---
 
-## ⚠️ Security Notice (action required before anything else)
-
-The three scripts in `createwebhooks/` previously contained a **hard-coded client secret** in plaintext:
-
-```
-$clientSecret = "<REDACTED>"   # createwebhooks/CreateWebhookSubscription1.ps1, 2, 3
-```
-
-**Required actions:**
-
-1. **Rotate / revoke** this client secret in Microsoft Entra ID immediately — assume it is compromised.
-2. Never commit secrets to source control. The new secret must live in **Key Vault** or Function **app settings**, not in code.
-3. Add `local.settings.json` and any `*.secrets.*` files to `.gitignore`.
-
----
-
 ## 1. Goal
 
 Stream **Microsoft Purview / Microsoft 365 audit activity** (Exchange, SharePoint,
@@ -140,10 +124,10 @@ flowchart LR
 
 | # | Step | Component | Notes |
 |---|------|-----------|-------|
-| A | **Weekly trigger** | Timer (`func-prism-entrausers`) | NCRONTAB schedule, e.g. every Monday 02:00 UTC (`0 0 2 * * 1`). |
+| A | **Daily trigger** | Timer (`func-prism-entrausers`) | NCRONTAB schedule, daily 02:00 UTC (`0 0 2 * * *`). |
 | B | **Acquire Graph token** | Function → Entra | Token for `https://graph.microsoft.com/.default` using the **same** client secret / app id. |
 | C | **Pull all users** | Function → Microsoft Graph | `GET /v1.0/users?$select=...` with **paging** (`@odata.nextLink`) to retrieve every user + selected properties. |
-| D | **Overwrite blob** | Function → ADLS Gen2 | Serializes the full user set and **overwrites** `reference/entra/users.json` (via storage **connection string**) so the blob always holds the current, unique users (no duplicates, no history). |
+| D | **Overwrite blob** | Function → ADLS Gen2 | Serializes the full user set and **overwrites** `reference/entra/users.json` (via **managed identity**) so the blob always holds the current, unique users (no duplicates, no history). |
 
 ### Authentication model (as implemented)
 - **Management API:** Entra **client secret** (the **same** app registration) — token for `manage.office.com`. The secret is stored in **Key Vault** and read via a Key Vault reference app setting.
@@ -167,7 +151,7 @@ flowchart LR
 | 3 | Event Hubs Namespace | `Microsoft.EventHub/namespaces` | 1 (**shared**) | **Standard** | Hosts all workload Event Hubs |
 | 4 | Event Hub | `Microsoft.EventHub/namespaces/eventhubs` | **1 per enabled workload** | 4 partitions | One stream per content type |
 | 5 | Stream Analytics job | `Microsoft.StreamAnalytics/streamingjobs` | **1 (shared)** | Standard, 1 SU | Multi-input/output job; one input + output folder per workload |
-| 6 | Function App | `Microsoft.Web/sites` (functionapp,linux) | **1 per enabled workload + 1** (entrausers) | **Flex Consumption (FC1)** | Webhook receivers + weekly Entra-users snapshot |
+| 6 | Function App | `Microsoft.Web/sites` (functionapp,linux) | **1 per enabled workload + 1** (entrausers) | **Flex Consumption (FC1)** | Webhook receivers + daily Entra-users snapshot |
 | 7 | Function Plan | `Microsoft.Web/serverfarms` | **1 per Function App** | FC1 | One Flex plan per Function App |
 | 8 | Function Storage | `Microsoft.Storage/storageAccounts` | **1 per Function App** | Standard_LRS | Runtime + deployment package per Function App |
 | 9 | Key Vault | `Microsoft.KeyVault/vaults` | 1 (**shared**) | Standard | Entra client secret (via private endpoint) |
@@ -201,10 +185,10 @@ container: auditlogs/
   azuread-json/     ...   <- azuread-output     (Audit.AzureActiveDirectory)
 
 container: reference/
-  entra/users.json        <- weekly snapshot, OVERWRITTEN each run
+  entra/users.json        <- daily snapshot, OVERWRITTEN each run
 ```
 
-- The audit streams **append** (immutable, partitioned by date — one daily folder `…/<workload>-json/yyyy/MM/dd/`); the Entra users blob is a **single file overwritten weekly** so it always holds the current unique user set.
+- The audit streams **append** (immutable, partitioned by date — one daily folder `…/<workload>-json/yyyy/MM/dd/`); the Entra users blob is a **single file overwritten daily** so it always holds the current unique user set.
 - Only the paths for **enabled** workloads are produced.
 - Apply **lifecycle management** on the storage account to tier/expire old data. The `reference/entra/` blob is excluded from expiry since it is always the latest snapshot.
 
