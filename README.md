@@ -31,6 +31,7 @@ Detailed guidance lives in the [`docs/`](docs/) folder:
 |---------|-------------|
 | [Deployment guide](docs/deploy.md) | Prerequisites, Entra app registration, `azd up`, choosing audit workloads, starting the audit subscriptions and the Stream Analytics job, and the full configuration reference. |
 | [Power BI reporting guide](docs/powerbi.md) | Importing the M queries (or the `.pbit` template), model relationships, and incremental refresh. |
+| [MCP over the Data Lake](docs/mcp-datalake.md) | Add AI/MCP natural-language querying over the audit lake — Azure MCP Server (Option A) and Microsoft Fabric Data Agent (Option C). |
 | [Solution proposal](docs/solution-proposal.md) | End-to-end architecture and the Azure resources created. |
 | [Cost proposal](docs/cost-proposal.md) | Estimated monthly Azure cost and per-workload cost impact. |
 | [PRISM vs. MPARR](docs/prism-vs-mparr.md) | How PRISM compares to Microsoft's MPARR collector on cost, implementation, maintenance, and flexibility. |
