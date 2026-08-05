@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "11193478646887975646"
+      "templateHash": "14667873478194481190"
     }
   },
   "parameters": {
@@ -130,7 +130,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "1275672154557881710"
+              "templateHash": "5142650158389645864"
             }
           },
           "parameters": {
@@ -1795,7 +1795,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "5546337262874382571"
+                      "templateHash": "6851709842869650702"
                     }
                   },
                   "parameters": {
@@ -1942,6 +1942,42 @@
                       },
                       "dependsOn": [
                         "[resourceId('Microsoft.Storage/storageAccounts/blobServices', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')), 'default')]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+                      "apiVersion": "2023-05-01",
+                      "name": "[format('{0}/{1}', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')), 'default')]",
+                      "properties": {
+                        "policy": {
+                          "rules": [
+                            {
+                              "enabled": true,
+                              "name": "delete-processed-content-markers",
+                              "type": "Lifecycle",
+                              "definition": {
+                                "actions": {
+                                  "baseBlob": {
+                                    "delete": {
+                                      "daysAfterModificationGreaterThan": 8
+                                    }
+                                  }
+                                },
+                                "filters": {
+                                  "blobTypes": [
+                                    "blockBlob"
+                                  ],
+                                  "prefixMatch": [
+                                    "prism-processed-content/"
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')))]"
                       ]
                     },
                     {
@@ -2579,7 +2615,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "5546337262874382571"
+                      "templateHash": "6851709842869650702"
                     }
                   },
                   "parameters": {
@@ -2726,6 +2762,42 @@
                       },
                       "dependsOn": [
                         "[resourceId('Microsoft.Storage/storageAccounts/blobServices', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')), 'default')]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+                      "apiVersion": "2023-05-01",
+                      "name": "[format('{0}/{1}', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')), 'default')]",
+                      "properties": {
+                        "policy": {
+                          "rules": [
+                            {
+                              "enabled": true,
+                              "name": "delete-processed-content-markers",
+                              "type": "Lifecycle",
+                              "definition": {
+                                "actions": {
+                                  "baseBlob": {
+                                    "delete": {
+                                      "daysAfterModificationGreaterThan": 8
+                                    }
+                                  }
+                                },
+                                "filters": {
+                                  "blobTypes": [
+                                    "blockBlob"
+                                  ],
+                                  "prefixMatch": [
+                                    "prism-processed-content/"
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')))]"
                       ]
                     },
                     {

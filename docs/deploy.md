@@ -126,6 +126,54 @@ $env:AZUREAD_WEBHOOK_URL    = "https://<azuread-func>.azurewebsites.net/api/webh
 > The Function App keys in `*_WEBHOOK_URL` are secrets — set them only as
 > environment variables for the current session; never commit them.
 
+### Webhook lifetime and gap recovery
+
+The bootstrap scripts do not set a webhook expiration, so a healthy subscription
+has `webhook.expiration: null` and does **not** need scheduled renewal. Do not stop
+and restart healthy subscriptions: content made available while a subscription is
+stopped cannot be recovered. Re-run the matching `subscriptions/start` script
+without stopping first when a webhook URL changes or a webhook must be re-enabled.
+Microsoft requires 15 minutes between repeated start requests.
+
+Each audit Function uses two complementary ingestion paths:
+
+1. The webhook processes new content immediately.
+2. A timer runs every 10 minutes, verifies that both the subscription and webhook
+  are `enabled`, and reconciles `/subscriptions/content` from the last successful
+  watermark with a 30-minute overlap. It follows `NextPageUri` pagination and
+  processes recovery history in windows no longer than 24 hours.
+
+The Function stores its watermark and processed `contentId` markers in its own
+host storage account using managed identity. Markers are retained for eight days
+and prevent normal webhook/poller overlap from writing the same content twice.
+A content blob is marked complete only after its records are sent to Event Hub.
+Failed webhook processing returns a non-200 response so Microsoft retries it, and
+failed timer processing leaves the watermark unchanged for the next run.
+
+Microsoft content is available for only seven days. A new deployment therefore
+starts reconciliation just inside that limit, and unresolved failures must be
+fixed before the content expires. Delivery is **at least once**: a process failure
+between an Event Hub send and marker creation can produce duplicates. Use the
+audit record `Id` as the downstream deduplication key where exact-once reporting
+is required.
+
+In Application Insights, alert on failed `reconcile_content` executions and on
+exceptions containing `Unhealthy subscription` or `Content reconciliation
+failed`. Recommended operations thresholds are:
+
+- Warning: no successful reconciliation for 30 minutes.
+- Critical: an ingestion failure remains unresolved for 24 hours.
+- Recovery deadline: resolve all failures before seven days.
+
+To inspect subscription state manually, acquire a Management Activity API token
+with the same app registration and call:
+
+```text
+GET https://manage.office.com/api/v1.0/<tenant-id>/activity/feed/subscriptions/list?PublisherIdentifier=<tenant-id>
+```
+
+Both the selected content type's `status` and `webhook.status` must be `enabled`.
+
 ## Start the Stream Analytics job
 
 The **single, shared** Stream Analytics job (`asa-prism-<token>`) is created in a

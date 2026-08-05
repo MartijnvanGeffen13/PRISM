@@ -3,3 +3,4 @@ azure-functions
 requests
 azure-eventhub
 azure-identity
+azure-storage-blob
