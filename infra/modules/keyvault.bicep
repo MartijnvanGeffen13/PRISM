@@ -42,9 +42,9 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
     enablePurgeProtection: true
-    // Public endpoint is firewalled to default-deny. The Function Apps read
-    // secrets over a private endpoint via their VNet integration.
-    publicNetworkAccess: 'Enabled'
+    // Public access is disabled. The Function Apps read secrets over a private
+    // endpoint via their VNet integration.
+    publicNetworkAccess: 'Disabled'
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Deny'

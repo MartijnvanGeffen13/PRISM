@@ -74,10 +74,9 @@ resource hostStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
     supportsHttpsTrafficOnly: true
-    // Host storage is firewalled to default-deny. The Function App reaches it
-    // over private endpoints via VNet integration. The optional deployer IP
-    // lets azd upload the deployment package from outside the VNet.
-    publicNetworkAccess: 'Enabled'
+    // Host storage is private-only. The Function App reaches it over private
+    // endpoints via VNet integration.
+    publicNetworkAccess: 'Disabled'
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Deny'
@@ -97,6 +96,39 @@ resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   name: 'deploymentpackage'
   properties: {
     publicAccess: 'None'
+  }
+}
+
+resource hostStorageLifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
+  parent: hostStorage
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          enabled: true
+          name: 'delete-processed-content-markers'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: 8
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+              ]
+              prefixMatch: [
+                'prism-processed-content/'
+              ]
+            }
+          }
+        }
+      ]
+    }
   }
 }
 

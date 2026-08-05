@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "11193478646887975646"
+      "templateHash": "10418978814645974875"
     }
   },
   "parameters": {
@@ -130,7 +130,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "1275672154557881710"
+              "templateHash": "9090358177318760218"
             }
           },
           "parameters": {
@@ -470,7 +470,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "18359647051496143160"
+                      "templateHash": "2471709458288758103"
                     }
                   },
                   "parameters": {
@@ -538,7 +538,7 @@
                         "enableSoftDelete": true,
                         "softDeleteRetentionInDays": 90,
                         "enablePurgeProtection": true,
-                        "publicNetworkAccess": "Enabled",
+                        "publicNetworkAccess": "Disabled",
                         "networkAcls": {
                           "bypass": "AzureServices",
                           "defaultAction": "Deny",
@@ -1795,7 +1795,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "5546337262874382571"
+                      "templateHash": "15075779516251174348"
                     }
                   },
                   "parameters": {
@@ -1916,7 +1916,7 @@
                         "allowBlobPublicAccess": false,
                         "allowSharedKeyAccess": false,
                         "supportsHttpsTrafficOnly": true,
-                        "publicNetworkAccess": "Enabled",
+                        "publicNetworkAccess": "Disabled",
                         "networkAcls": {
                           "bypass": "AzureServices",
                           "defaultAction": "Deny",
@@ -1942,6 +1942,42 @@
                       },
                       "dependsOn": [
                         "[resourceId('Microsoft.Storage/storageAccounts/blobServices', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')), 'default')]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+                      "apiVersion": "2023-05-01",
+                      "name": "[format('{0}/{1}', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')), 'default')]",
+                      "properties": {
+                        "policy": {
+                          "rules": [
+                            {
+                              "enabled": true,
+                              "name": "delete-processed-content-markers",
+                              "type": "Lifecycle",
+                              "definition": {
+                                "actions": {
+                                  "baseBlob": {
+                                    "delete": {
+                                      "daysAfterModificationGreaterThan": 8
+                                    }
+                                  }
+                                },
+                                "filters": {
+                                  "blobTypes": [
+                                    "blockBlob"
+                                  ],
+                                  "prefixMatch": [
+                                    "prism-processed-content/"
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')))]"
                       ]
                     },
                     {
@@ -2579,7 +2615,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "5546337262874382571"
+                      "templateHash": "15075779516251174348"
                     }
                   },
                   "parameters": {
@@ -2700,7 +2736,7 @@
                         "allowBlobPublicAccess": false,
                         "allowSharedKeyAccess": false,
                         "supportsHttpsTrafficOnly": true,
-                        "publicNetworkAccess": "Enabled",
+                        "publicNetworkAccess": "Disabled",
                         "networkAcls": {
                           "bypass": "AzureServices",
                           "defaultAction": "Deny",
@@ -2726,6 +2762,42 @@
                       },
                       "dependsOn": [
                         "[resourceId('Microsoft.Storage/storageAccounts/blobServices', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')), 'default')]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Storage/storageAccounts/managementPolicies",
+                      "apiVersion": "2023-05-01",
+                      "name": "[format('{0}/{1}', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')), 'default')]",
+                      "properties": {
+                        "policy": {
+                          "rules": [
+                            {
+                              "enabled": true,
+                              "name": "delete-processed-content-markers",
+                              "type": "Lifecycle",
+                              "definition": {
+                                "actions": {
+                                  "baseBlob": {
+                                    "delete": {
+                                      "daysAfterModificationGreaterThan": 8
+                                    }
+                                  }
+                                },
+                                "filters": {
+                                  "blobTypes": [
+                                    "blockBlob"
+                                  ],
+                                  "prefixMatch": [
+                                    "prism-processed-content/"
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Storage/storageAccounts', format('st{0}{1}', parameters('serviceName'), parameters('resourceToken')))]"
                       ]
                     },
                     {

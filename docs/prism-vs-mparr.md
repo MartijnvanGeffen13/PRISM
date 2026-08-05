@@ -20,6 +20,7 @@ take fundamentally different architectural approaches.
 | **Compute to run/maintain** | **None** — fully serverless (Flex Consumption Functions + managed Stream Analytics) | You provide & patch a **host** (VM / server / Automation) to run the scripts |
 | **Secrets model** | **Managed identity** everywhere; one secret in **Key Vault** | Certificate / secret stored on the runner host |
 | **Network security** | **VNet + private endpoints + Network Security Perimeter** on the lake | Depends on the host; data governed by Log Analytics RBAC |
+| **Monitoring & alerting** | **Built-in Application Insights + Log Analytics** per Function; a 10-min timer actively **health-checks the audit subscriptions** and surfaces failures as alertable exceptions | Depends on the host; you monitor **scheduled-script** success/failure yourself and author Log Analytics/Sentinel alert rules |
 | **Scaling** | Elastic, near-real-time, **per-workload isolated** pipelines | Bigger host / more frequent runs; single Log Analytics sink |
 | **Landing cost per GB** | **~$0 one-time** — write JSON to the lake | **~$2.90 / GB** Log Analytics ingestion (one-time, per GB) |
 | **Long-term retention cost** | **Object-storage prices** (~$0.02 / GB-month, ~$0.01 Cool) | **Log Analytics retention** (~$0.10 / GB-month beyond the free 31 days) |
@@ -76,6 +77,36 @@ PRISM ships with **VNet integration, private endpoints, disabled local/shared-ke
 and a Network Security Perimeter** guarding the Data Lake's public access — inbound is
 denied by default and opened only to explicit report-author IPs. Secretless managed
 identity is the default, not an add-on.
+
+### 📊 Monitoring & alerting — built-in health checks vs. roll-your-own
+
+The two solutions differ sharply in **how you know ingestion is healthy** and **how gaps
+surface**.
+
+- **PRISM:** every Function App emits telemetry to its own **Application Insights**
+  instance backed by a shared **Log Analytics** workspace — executions, dependencies,
+  and exceptions are captured with no extra setup. Beyond passive telemetry, each
+  workload runs a **`reconcile_content` timer every 10 minutes** that **actively verifies
+  the Office 365 Management subscription and its webhook are both `enabled`** and
+  reconciles any content the webhook missed. A disabled subscription, a broken webhook,
+  or a failed content pull becomes a **failed Function execution / logged exception** you
+  can alert on — turning silent audit-feed gaps into visible, actionable signals. The
+  [deployment guide](deploy.md#webhook-lifetime-and-gap-recovery) documents ready-to-use
+  alerts (failed `reconcile_content`, `Unhealthy subscription`, `Content reconciliation
+  failed`) and recommended thresholds: **warn** if no successful reconciliation for
+  30 minutes, **critical** if a failure is unresolved for 24 hours, and a hard **7-day**
+  recovery deadline (the Management API's content-retention limit).
+- **MPARR:** monitoring is **whatever you build around the host**. Success or failure of
+  the scheduled PowerShell runs is yours to watch (task-scheduler/cron exit codes, host
+  logs), and there is **no built-in subscription health check** — if a collector stops or
+  a run silently fails, the feed simply goes quiet until you notice. Alerting is possible
+  but **not turned on for you**: you author **Log Analytics / Sentinel alert rules** (KQL)
+  against the ingested tables, and Sentinel's analytics carry a **per-GB analysis charge**.
+
+> **Net effect:** PRISM treats *gap detection* as a first-class, self-hosted feature —
+> the pipeline watches itself and fails loudly. MPARR gives you the raw data to alert on
+> but leaves **collector health and gap detection as an operational exercise** on the host
+> and in Log Analytics/Sentinel.
 
 ## 💰 Cost — detailed side-by-side (same 1M & 5M records/day basis)
 
@@ -239,6 +270,7 @@ just Log Analytics.
 | Long-term retention | ~$0.02/GB-month (~$0.01 Cool) | ~$0.10/GB-month (grows forever) |
 | Est. secure cost (month 1) | **~$383 @1M/day · ~$390 @5M/day — flat** | ~$178 @1M/day · ~$658 @5M/day (plain LA; more w/ Sentinel), **grows** |
 | Consume from | Power BI, Fabric, Synapse, any SIEM | Log Analytics / Power BI |
+| Monitor & alert | Built-in App Insights + **active 10-min subscription health check**; alert on failed runs | Watch host/scripts yourself; author LA/Sentinel alert rules |
 | Security | MI + Key Vault + private endpoints + NSP, **no host** | Key Vault + private endpoints + NSP **on a host you patch** |
 | Best for | Modern, low-maintenance, cost-efficient, tool-agnostic reporting | Turnkey prebuilt reports on Log Analytics/Sentinel |
 
