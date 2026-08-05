@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "14667873478194481190"
+      "templateHash": "10418978814645974875"
     }
   },
   "parameters": {
@@ -130,7 +130,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "5142650158389645864"
+              "templateHash": "9090358177318760218"
             }
           },
           "parameters": {
@@ -470,7 +470,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "18359647051496143160"
+                      "templateHash": "2471709458288758103"
                     }
                   },
                   "parameters": {
@@ -538,7 +538,7 @@
                         "enableSoftDelete": true,
                         "softDeleteRetentionInDays": 90,
                         "enablePurgeProtection": true,
-                        "publicNetworkAccess": "Enabled",
+                        "publicNetworkAccess": "Disabled",
                         "networkAcls": {
                           "bypass": "AzureServices",
                           "defaultAction": "Deny",
@@ -1795,7 +1795,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "6851709842869650702"
+                      "templateHash": "15075779516251174348"
                     }
                   },
                   "parameters": {
@@ -1916,7 +1916,7 @@
                         "allowBlobPublicAccess": false,
                         "allowSharedKeyAccess": false,
                         "supportsHttpsTrafficOnly": true,
-                        "publicNetworkAccess": "Enabled",
+                        "publicNetworkAccess": "Disabled",
                         "networkAcls": {
                           "bypass": "AzureServices",
                           "defaultAction": "Deny",
@@ -2615,7 +2615,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.44.1.10279",
-                      "templateHash": "6851709842869650702"
+                      "templateHash": "15075779516251174348"
                     }
                   },
                   "parameters": {
@@ -2736,7 +2736,7 @@
                         "allowBlobPublicAccess": false,
                         "allowSharedKeyAccess": false,
                         "supportsHttpsTrafficOnly": true,
-                        "publicNetworkAccess": "Enabled",
+                        "publicNetworkAccess": "Disabled",
                         "networkAcls": {
                           "bypass": "AzureServices",
                           "defaultAction": "Deny",

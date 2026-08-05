@@ -74,10 +74,9 @@ resource hostStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     allowBlobPublicAccess: false
     allowSharedKeyAccess: false
     supportsHttpsTrafficOnly: true
-    // Host storage is firewalled to default-deny. The Function App reaches it
-    // over private endpoints via VNet integration. The optional deployer IP
-    // lets azd upload the deployment package from outside the VNet.
-    publicNetworkAccess: 'Enabled'
+    // Host storage is private-only. The Function App reaches it over private
+    // endpoints via VNet integration.
+    publicNetworkAccess: 'Disabled'
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Deny'
